@@ -1,3 +1,6 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* TEMP: prove CSS loads in production */
+html, body { background: #ffe9a8 !important; }
