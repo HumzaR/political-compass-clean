@@ -7,7 +7,7 @@ export default function Home() {
         <title>Political Compass</title>
       </Head>
       <main className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to the Political Compass Quiz</h1>
+        <h1 className="text-4xl font-bold mb-4">Welcome to the *NEW* Political Compass Quiz</h1>
         <p className="text-lg">Start the quiz to discover where you fall on the political spectrum.</p>
       </main>
     </div>
