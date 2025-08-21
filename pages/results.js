@@ -1,3 +1,4 @@
+// pages/results.js
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import questions from '../data/questions';
@@ -14,13 +15,20 @@ export default function Results() {
     // Ensure the query is available (Next.js quirk)
     if (!router.isReady) return;
 
-    const answersStr = router.query.answers || '';
-    const answerArray = answersStr ? answersStr.split(',').map(Number) : [];
+    const answersStr = typeof router.query.answers === 'string' ? router.query.answers : '';
+    // Robust parsing: coerce to numbers; default to 3 (neutral) when missing/invalid
+    const answerArray = answersStr
+      ? answersStr.split(',').map((v) => {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : 3;
+        })
+      : [];
 
-    // Map answers to question IDs (by index order)
+    // Map answers to question IDs (by index order) with safe default
     const userAnswers = {};
     questions.forEach((q, i) => {
-      userAnswers[q.id] = answerArray[i];
+      const val = answerArray[i];
+      userAnswers[q.id] = Number.isFinite(val) ? val : 3; // neutral fallback
     });
 
     // Compute scores
@@ -29,7 +37,7 @@ export default function Results() {
 
     questions.forEach((q) => {
       const response = userAnswers[q.id];
-      // response can be 0 (valid for yes/no), so only skip if undefined/NaN
+      // Only skip if truly undefined/NaN
       if (response === undefined || Number.isNaN(response)) return;
 
       // Center 1–5 around 3; multiply by weight and direction
@@ -67,8 +75,12 @@ export default function Results() {
     ctx.clearRect(0, 0, 400, 400);
     ctx.strokeStyle = '#ccc';
     ctx.beginPath();
-    ctx.moveTo(200, 0);   ctx.lineTo(200, 400); // Y axis
-    ctx.moveTo(0, 200);   ctx.lineTo(400, 200); // X axis
+    // Y axis
+    ctx.moveTo(200, 0);
+    ctx.lineTo(200, 400);
+    // X axis
+    ctx.moveTo(0, 200);
+    ctx.lineTo(400, 200);
     ctx.stroke();
 
     // Labels
@@ -79,9 +91,10 @@ export default function Results() {
     ctx.fillText('Auth', 205, 20);
     ctx.fillText('Lib', 205, 390);
 
-    // Point (tweak 20 -> different scale if needed)
+    // Point
+    // IMPORTANT: flip Y so higher socialScore plots UP (Auth at top, Lib at bottom)
     const x = 200 + economicScore * 20;
-    const y = 200 + socialScore * 20;
+    const y = 200 - socialScore * 20;
 
     ctx.beginPath();
     ctx.arc(x, y, 6, 0, Math.PI * 2);
@@ -102,8 +115,12 @@ export default function Results() {
     <div className="text-center mt-10">
       <h1 className="text-2xl font-bold mb-4">Your Political Compass</h1>
       <canvas ref={canvasRef} width="400" height="400" className="border mx-auto" />
-      <p className="mt-4"><strong>Economic Score:</strong> {economicScore.toFixed(2)}</p>
-      <p><strong>Social Score:</strong> {socialScore.toFixed(2)}</p>
+      <p className="mt-4">
+        <strong>Economic Score:</strong> {economicScore.toFixed(2)}
+      </p>
+      <p>
+        <strong>Social Score:</strong> {socialScore.toFixed(2)}
+      </p>
 
       {/* Debug panel – remove when happy */}
       {debug && (
