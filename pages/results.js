@@ -11,12 +11,12 @@ export default function Results() {
   const [socialScore, setSocialScore] = useState(null);
   const [debug, setDebug] = useState(null);
 
+  const showDebug = process.env.NEXT_PUBLIC_DEBUG === '1';
+
   useEffect(() => {
-    // Ensure the query is available (Next.js quirk)
     if (!router.isReady) return;
 
     const answersStr = typeof router.query.answers === 'string' ? router.query.answers : '';
-    // Robust parsing: coerce to numbers; default to 3 (neutral) when missing/invalid
     const answerArray = answersStr
       ? answersStr.split(',').map((v) => {
           const n = Number(v);
@@ -24,23 +24,19 @@ export default function Results() {
         })
       : [];
 
-    // Map answers to question IDs (by index order) with safe default
     const userAnswers = {};
     questions.forEach((q, i) => {
       const val = answerArray[i];
-      userAnswers[q.id] = Number.isFinite(val) ? val : 3; // neutral fallback
+      userAnswers[q.id] = Number.isFinite(val) ? val : 3;
     });
 
-    // Compute scores
     let econ = 0;
     let soc = 0;
 
     questions.forEach((q) => {
       const response = userAnswers[q.id];
-      // Only skip if truly undefined/NaN
       if (response === undefined || Number.isNaN(response)) return;
 
-      // Center 1–5 around 3; multiply by weight and direction
       const scaled = (response - 3) * (q.weight ?? 1) * (q.direction ?? 1);
 
       if (q.axis === 'economic') {
@@ -53,16 +49,18 @@ export default function Results() {
     setEconomicScore(econ);
     setSocialScore(soc);
 
-    setDebug({
-      isReady: router.isReady,
-      answersStr,
-      answerArray,
-      mappedAnswers: userAnswers,
-      econ,
-      soc,
-      questionCount: questions.length,
-    });
-  }, [router.isReady, router.query]);
+    if (showDebug) {
+      setDebug({
+        isReady: router.isReady,
+        answersStr,
+        answerArray,
+        mappedAnswers: userAnswers,
+        econ,
+        soc,
+        questionCount: questions.length,
+      });
+    }
+  }, [router.isReady, router.query, showDebug]);
 
   useEffect(() => {
     if (economicScore === null || socialScore === null) return;
@@ -71,19 +69,15 @@ export default function Results() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    // Clear & grid
     ctx.clearRect(0, 0, 400, 400);
     ctx.strokeStyle = '#ccc';
     ctx.beginPath();
-    // Y axis
     ctx.moveTo(200, 0);
     ctx.lineTo(200, 400);
-    // X axis
     ctx.moveTo(0, 200);
     ctx.lineTo(400, 200);
     ctx.stroke();
 
-    // Labels
     ctx.font = '12px Arial';
     ctx.fillStyle = '#666';
     ctx.fillText('Left', 20, 210);
@@ -91,8 +85,6 @@ export default function Results() {
     ctx.fillText('Auth', 205, 20);
     ctx.fillText('Lib', 205, 390);
 
-    // Point
-    // IMPORTANT: flip Y so higher socialScore plots UP (Auth at top, Lib at bottom)
     const x = 200 + economicScore * 20;
     const y = 200 - socialScore * 20;
 
@@ -122,8 +114,8 @@ export default function Results() {
         <strong>Social Score:</strong> {socialScore.toFixed(2)}
       </p>
 
-      {/* Debug panel – remove when happy */}
-      {debug && (
+      {/* Debug panel only if NEXT_PUBLIC_DEBUG=1 */}
+      {showDebug && debug && (
         <div className="text-left max-w-xl mx-auto mt-6 p-4 border rounded bg-gray-50">
           <h2 className="font-semibold mb-2">Debug</h2>
           <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
