@@ -1,21 +1,48 @@
-import { useMemo, useState } from "react";
+// pages/quiz.js
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import questions from "../data/questions";
 
+import { auth } from "../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+
 export default function Quiz() {
   const router = useRouter();
+  const [user, setUser] = useState(undefined); // undefined = loading, null = not logged in
   const [answers, setAnswers] = useState({}); // { [id]: 1..5 }
   const [current, setCurrent] = useState(0);
+
+  // Auth guard
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
+    return () => unsub();
+  }, []);
+
+  // If not logged in, redirect to /login
+  useEffect(() => {
+    if (user === null) {
+      router.replace("/login");
+    }
+  }, [user, router]);
+
+  if (user === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Checking your session…</p>
+      </div>
+    );
+  }
+  if (user === null) {
+    return null; // brief flash before router.replace
+  }
 
   const q = questions[current];
   const total = questions.length;
 
-  // Count how many answers are filled to drive the progress bar
   const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
   const progressPercent = Math.round((answeredCount / total) * 100);
 
   const selectAnswer = (value) => {
-    // value must be 1..5 to match the results scoring
     setAnswers((prev) => ({ ...prev, [q.id]: value }));
   };
 
@@ -23,8 +50,8 @@ export default function Quiz() {
     if (current < total - 1) {
       setCurrent((c) => c + 1);
     } else {
-      // Submit
-      const answerArray = questions.map((qq) => answers[qq.id] ?? 3); // default neutral
+      // Submit to results (defaults to 3 for any unanswered)
+      const answerArray = questions.map((qq) => answers[qq.id] ?? 3);
       router.push(`/results?answers=${answerArray.join(",")}`);
     }
   };
@@ -35,7 +62,6 @@ export default function Quiz() {
 
   const hasAnswer = answers[q.id] !== undefined;
 
-  // Render 1–5 scale buttons
   const ScaleButtons = () => {
     const labels = {
       1: "Strongly Disagree",
@@ -56,11 +82,13 @@ export default function Quiz() {
                 "p-3 rounded-lg border transition text-sm sm:text-base",
                 selected
                   ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400"
+                  : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400",
               ].join(" ")}
             >
               <div className="font-semibold">{n}</div>
-              <div className="text-xs sm:text-[0.8rem] opacity-80">{labels[n]}</div>
+              <div className="text-xs sm:text-[0.8rem] opacity-80">
+                {labels[n]}
+              </div>
             </button>
           );
         })}
@@ -68,7 +96,6 @@ export default function Quiz() {
     );
   };
 
-  // Render Yes/No mapped to 5/1 so results.js can treat on the same 1–5 scale
   const YesNoButtons = () => {
     const opts = [
       { label: "Yes", value: 5 },
@@ -86,7 +113,7 @@ export default function Quiz() {
                 "px-6 py-3 rounded-lg border transition font-semibold",
                 selected
                   ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400"
+                  : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400",
               ].join(" ")}
             >
               {label}
@@ -101,7 +128,9 @@ export default function Quiz() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Top bar */}
       <div className="max-w-3xl mx-auto px-4 pt-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">Political Compass Quiz</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">
+          Political Compass Quiz
+        </h1>
         <p className="text-gray-600 mt-1">
           Question {current + 1} of {total}
         </p>
@@ -122,7 +151,9 @@ export default function Quiz() {
       {/* Card */}
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8">
-          <p className="text-lg sm:text-xl font-medium text-gray-900 text-center">{q.text}</p>
+          <p className="text-lg sm:text-xl font-medium text-gray-900 text-center">
+            {q.text}
+          </p>
 
           <div className="mt-6">
             {q.type === "scale" ? <ScaleButtons /> : <YesNoButtons />}
@@ -137,7 +168,7 @@ export default function Quiz() {
                 "px-5 py-3 rounded-lg border font-semibold transition",
                 current === 0
                   ? "text-gray-400 border-gray-200 cursor-not-allowed"
-                  : "text-gray-700 border-gray-300 hover:border-gray-400"
+                  : "text-gray-700 border-gray-300 hover:border-gray-400",
               ].join(" ")}
             >
               ← Back
@@ -150,7 +181,7 @@ export default function Quiz() {
                 "px-6 py-3 rounded-lg font-semibold transition",
                 hasAnswer
                   ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                  : "bg-gray-300 text-gray-600 cursor-not-allowed"
+                  : "bg-gray-300 text-gray-600 cursor-not-allowed",
               ].join(" ")}
             >
               {current < total - 1 ? "Next →" : "Submit Results"}
