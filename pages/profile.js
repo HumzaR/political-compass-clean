@@ -16,7 +16,7 @@ import {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in, object=logged in
+  const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [redirectingToQuiz, setRedirectingToQuiz] = useState(false);
 
@@ -72,19 +72,16 @@ export default function ProfilePage() {
           });
         }
 
-        // If no lastResultId, send them to quiz to create their first profile result
         if (!lastResultId) {
           setRedirectingToQuiz(true);
           router.replace("/quiz");
           return;
         }
 
-        // Load last result
         const resSnap = await getDoc(doc(db, "results", lastResultId));
         if (resSnap.exists()) {
           setResults(resSnap.data());
         } else {
-          // If the stored id doesn't resolve (deleted?), send to quiz
           setRedirectingToQuiz(true);
           router.replace("/quiz");
           return;
@@ -150,6 +147,9 @@ export default function ProfilePage() {
   if (loadingProfile) {
     return <p className="text-center mt-10">Loading your profile…</p>;
   }
+
+  const publicUrl =
+    form.username ? `${typeof window !== "undefined" ? window.location.origin : ""}/u/${form.username}` : "";
 
   return (
     <div className="max-w-2xl mx-auto p-6">
@@ -244,6 +244,34 @@ export default function ProfilePage() {
           {saving ? "Saving…" : "Save Profile"}
         </button>
       </form>
+
+      {/* Public link */}
+      <div className="mt-6 bg-gray-50 p-4 rounded border">
+        <h3 className="font-semibold mb-2">Public profile link</h3>
+        {form.username ? (
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={publicUrl}
+              className="flex-1 border p-2 rounded bg-white"
+            />
+            <button
+              className="px-3 py-2 bg-indigo-600 text-white rounded"
+              onClick={() => {
+                if (publicUrl) {
+                  navigator.clipboard?.writeText(publicUrl);
+                }
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        ) : (
+          <p className="text-gray-600">
+            Set a username to get your shareable link.
+          </p>
+        )}
+      </div>
 
       {results && (
         <div className="mt-8 bg-gray-50 p-6 rounded shadow">
