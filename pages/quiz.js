@@ -25,6 +25,12 @@ export default function Quiz() {
     }
   }, [user, router]);
 
+  // Basic data guards
+  const total = Array.isArray(questions) ? questions.length : 0;
+  const safeIndex = Number.isFinite(current) && current >= 0 && current < total ? current : 0;
+  const hasQuestions = total > 0;
+  const q = hasQuestions ? questions[safeIndex] : null;
+
   if (user === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -36,31 +42,49 @@ export default function Quiz() {
     return null; // brief flash before router.replace
   }
 
-  const q = questions[current];
-  const total = questions.length;
+  if (!hasQuestions || !q || !q.id || !q.text) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">Quiz unavailable</h1>
+          <p className="text-gray-600">
+            No questions found. Please ensure <code>/data/questions.js</code> exports a non-empty array.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
   const progressPercent = Math.round((answeredCount / total) * 100);
 
   const selectAnswer = (value) => {
-    setAnswers((prev) => ({ ...prev, [q.id]: value }));
+    // value must be 1..5
+    const v = Number(value);
+    if (v >= 1 && v <= 5) {
+      setAnswers((prev) => ({ ...prev, [q.id]: v }));
+    }
   };
 
   const goNext = () => {
-    if (current < total - 1) {
+    if (safeIndex < total - 1) {
       setCurrent((c) => c + 1);
     } else {
       // Submit to results (defaults to 3 for any unanswered)
-      const answerArray = questions.map((qq) => answers[qq.id] ?? 3);
+      const answerArray = questions.map((qq) => {
+        const v = answers[qq.id];
+        return Number.isFinite(v) ? v : 3;
+        // 3 = neutral
+      });
       router.push(`/results?answers=${answerArray.join(",")}`);
     }
   };
 
   const goBack = () => {
-    if (current > 0) setCurrent((c) => c - 1);
+    if (safeIndex > 0) setCurrent((c) => c - 1);
   };
 
-  const hasAnswer = answers[q.id] !== undefined;
+  const hasAnswer = Number.isFinite(answers[q.id]);
 
   const ScaleButtons = () => {
     const labels = {
@@ -132,7 +156,7 @@ export default function Quiz() {
           Political Compass Quiz
         </h1>
         <p className="text-gray-600 mt-1">
-          Question {current + 1} of {total}
+          Question {safeIndex + 1} of {total}
         </p>
 
         {/* Progress bar that automatically reflects number of questions */}
@@ -163,10 +187,10 @@ export default function Quiz() {
           <div className="mt-8 flex items-center justify-between">
             <button
               onClick={goBack}
-              disabled={current === 0}
+              disabled={safeIndex === 0}
               className={[
                 "px-5 py-3 rounded-lg border font-semibold transition",
-                current === 0
+                safeIndex === 0
                   ? "text-gray-400 border-gray-200 cursor-not-allowed"
                   : "text-gray-700 border-gray-300 hover:border-gray-400",
               ].join(" ")}
@@ -184,7 +208,7 @@ export default function Quiz() {
                   : "bg-gray-300 text-gray-600 cursor-not-allowed",
               ].join(" ")}
             >
-              {current < total - 1 ? "Next →" : "Submit Results"}
+              {safeIndex < total - 1 ? "Next →" : "Submit Results"}
             </button>
           </div>
         </div>
