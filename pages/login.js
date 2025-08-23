@@ -1,36 +1,51 @@
 // pages/login.js
 import { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { useRouter } from 'next/router';
+import {
+  signInWithPopup,
+  GoogleAuthProvider,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+} from 'firebase/auth';
 import { auth } from '../lib/firebase';
 
 const provider = new GoogleAuthProvider();
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState('login'); // or 'signup'
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
     try {
       await signInWithPopup(auth, provider);
-      alert('Logged in with Google!');
+      router.push('/quiz'); // go straight to quiz after login
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEmailAuth = async () => {
+    setError('');
+    setLoading(true);
     try {
       if (mode === 'login') {
         await signInWithEmailAndPassword(auth, email, password);
-        alert('Logged in!');
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
-        alert('Account created!');
       }
+      router.push('/quiz'); // go straight to quiz after login/signup
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,30 +55,34 @@ export default function LoginPage() {
 
       <button
         onClick={handleGoogleLogin}
-        className="mb-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+        disabled={loading}
+        className="mb-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-60"
       >
-        Sign in with Google
+        {loading ? 'Please wait…' : 'Sign in with Google'}
       </button>
 
-      <div className="mb-4">
+      <div className="mb-4 w-full max-w-sm">
         <input
-          className="border p-2 w-full mb-2"
+          className="border p-2 w-full mb-2 rounded"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
         />
         <input
-          className="border p-2 w-full"
+          className="border p-2 w-full rounded"
           placeholder="Password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
         />
       </div>
 
       <button
         onClick={handleEmailAuth}
-        className="mb-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        disabled={loading}
+        className="mb-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-60"
       >
         {mode === 'login' ? 'Login' : 'Create Account'}
       </button>
@@ -71,11 +90,12 @@ export default function LoginPage() {
       <button
         className="text-sm text-blue-700 underline"
         onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+        disabled={loading}
       >
         {mode === 'login' ? 'Create an account' : 'Back to login'}
       </button>
 
-      {error && <p className="mt-4 text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-red-600 max-w-sm text-center">{error}</p>}
     </div>
   );
 }
