@@ -23,6 +23,7 @@ export default function Results() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [user, setUser] = useState(null);
+  const [saved, setSaved] = useState(false);
 
   const showDebug = process.env.NEXT_PUBLIC_DEBUG === '1';
 
@@ -78,12 +79,9 @@ export default function Results() {
 
     // Save results and then redirect -> /profile
     (async () => {
-      // Wait until we know auth state (either user or null)
-      // If not logged in, just skip saving and stay on results.
-      // (You could also redirect to /login, but keeping it simple.)
+      // wait briefly for auth listener to fire
       let attempts = 0;
       while (attempts < 20 && user === null) {
-        // yield to next tick while onAuthStateChanged fires
         await new Promise((r) => setTimeout(r, 50));
         attempts++;
       }
@@ -115,7 +113,9 @@ export default function Results() {
           { merge: true }
         );
 
-        // 3) Redirect to profile after a short pause so the user sees the plot
+        setSaved(true);
+
+        // 3) Auto-redirect after short pause
         setTimeout(() => {
           router.replace('/profile');
         }, 1200);
@@ -196,6 +196,17 @@ export default function Results() {
         )}
         {saveError && (
           <p className="mt-2 text-red-600 text-center">Error: {saveError}</p>
+        )}
+
+        {saved && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => router.replace('/profile')}
+              className="px-5 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+            >
+              Go to Profile now
+            </button>
+          </div>
         )}
 
         {/* Debug panel only if NEXT_PUBLIC_DEBUG=1 */}
