@@ -13,24 +13,28 @@ function QuizInner() {
   const [answers, setAnswers] = useState({}); // { [id]: 1..5 }
   const [current, setCurrent] = useState(0);
 
-  // Auth guard (client only)
+  // Hooks must always run in the same order — keep useEffects here (above any early returns)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
   }, []);
 
-  // Redirect unauthenticated users
   useEffect(() => {
     if (user === null) router.replace("/login");
   }, [user, router]);
 
-  // Data guards
+  // Data guards (no early return yet)
   const total = Array.isArray(questions) ? questions.length : 0;
   const hasQuestions = total > 0;
   const safeIndex =
     Number.isFinite(current) && current >= 0 && current < total ? current : 0;
   const q = hasQuestions ? questions[safeIndex] : null;
 
+  // These hooks must be called on every render (before any return branches)
+  const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
+  const progressPercent = Math.round(total > 0 ? (answeredCount / total) * 100 : 0);
+
+  // After all hooks above, it's safe to return based on state
   if (user === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -39,9 +43,8 @@ function QuizInner() {
     );
   }
   if (user === null) {
-    return null; // brief flash before redirect to /login
+    return null; // brief flash before redirect
   }
-
   if (!hasQuestions || !q || !q.id || !q.text) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 text-center">
@@ -54,9 +57,6 @@ function QuizInner() {
       </div>
     );
   }
-
-  const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
-  const progressPercent = Math.round((answeredCount / total) * 100);
 
   const selectAnswer = (value) => {
     const v = Number(value);
@@ -214,5 +214,5 @@ function QuizInner() {
   );
 }
 
-// Disable SSR for this page to avoid hydration issues with auth/state
+// Client-only page to avoid hydration issues with auth/router
 export default dynamic(() => Promise.resolve(QuizInner), { ssr: false });
