@@ -1,5 +1,6 @@
 // pages/results.js
-import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useEffect, useRef, useState, useMemo, useRef as useRefAlias } from 'react';
 import { useRouter } from 'next/router';
 import questions from '../data/questions';
 
@@ -13,91 +14,77 @@ import {
   collection,
 } from 'firebase/firestore';
 
-export default function Results() {
+function ResultsInner() {
   const router = useRouter();
   const canvasRef = useRef(null);
 
-  const [economicScore, setEconomicScore] = useState(null);
-  const [socialScore, setSocialScore] = useState(null);
-  const [debug, setDebug] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [user, setUser] = useState(null);
-  const [saved, setSaved] = useState(false);
-
-  const showDebug = process.env.NEXT_PUBLIC_DEBUG === '1';
-
-  // Watch auth to know which uid to save under
+  // ----- Auth -----
+  const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in, object=logged in
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    if (!router.isReady) return;
-
-    const answersStr = typeof router.query.answers === 'string' ? router.query.answers : '';
-    const answerArray = answersStr
-      ? answersStr.split(',').map((v) => {
-          const n = Number(v);
-          return Number.isFinite(n) ? n : 3;
-        })
-      : [];
-
-    // Build { [id]: value } answer map with safe default = 3 (neutral)
-    const userAnswers = {};
-    questions.forEach((q, i) => {
-      const val = answerArray[i];
-      userAnswers[q.id] = Number.isFinite(val) ? val : 3;
+  // ----- Parse answers & compute scores (robust) -----
+  const answersStr = typeof router.query.answers === 'string' ? router.query.answers : '';
+  const answerArray = useMemo(() => {
+    if (!answersStr) return [];
+    return answersStr.split(',').map((v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 3;
     });
+  }, [answersStr]);
 
-    // Compute scores
+  const { userAnswers, economicScore, socialScore } = useMemo(() => {
+    const ua = {};
     let econ = 0;
     let soc = 0;
-    questions.forEach((q) => {
-      const response = userAnswers[q.id];
-      if (response === undefined || Number.isNaN(response)) return;
-      const scaled = (response - 3) * (q.weight ?? 1) * (q.direction ?? 1);
+
+    (Array.isArray(questions) ? questions : []).forEach((q, i) => {
+      const val = answerArray[i];
+      const ans = Number.isFinite(val) ? val : 3; // neutral default
+      ua[q.id] = ans;
+
+      const scaled = (ans - 3) * (q.weight ?? 1) * (q.direction ?? 1);
       if (q.axis === 'economic') econ += scaled;
       else if (q.axis === 'social') soc += scaled;
     });
 
-    setEconomicScore(econ);
-    setSocialScore(soc);
+    return { userAnswers: ua, economicScore: econ, socialScore: soc };
+  }, [answerArray]);
 
-    if (showDebug) {
-      setDebug({
-        isReady: router.isReady,
-        answersStr,
-        answerArray,
-        mappedAnswers: userAnswers,
-        econ,
-        soc,
-        questionCount: questions.length,
-      });
-    }
+  // ----- Save state -----
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const hasAttemptedSaveRef = useRefAlias(false);
 
-    // Save results and then redirect -> /profile
-    (async () => {
-      // wait briefly for auth listener to fire
-      let attempts = 0;
-      while (attempts < 20 && user === null) {
-        await new Promise((r) => setTimeout(r, 50));
-        attempts++;
-      }
+  // ----- Kick off save once we have auth + scores -----
+  useEffect(() => {
+    // Only run when we know auth state and we haven't saved yet
+    if (user === undefined) return;
 
-      if (!user) return; // not logged in; do not save
+    // If not logged in, do NOT try to save. Show button to login instead.
+    if (user === null) return;
 
+    // Avoid double-save on React strict mode / re-renders
+    if (hasAttemptedSaveRef.current) return;
+    hasAttemptedSaveRef.current = true;
+
+    const doSave = async () => {
       try {
         setSaving(true);
         setSaveError('');
+
+        // Defensive checks:
+        if (!db) throw new Error('Firestore not initialized (check firebase config/env).');
 
         // 1) Save the result
         const resultsRef = collection(db, 'results');
         const resultDoc = await addDoc(resultsRef, {
           uid: user.uid,
-          economicScore: econ,
-          socialScore: soc,
+          economicScore,
+          socialScore,
           answers: userAnswers,
           createdAt: serverTimestamp(),
         });
@@ -115,26 +102,32 @@ export default function Results() {
 
         setSaved(true);
 
-        // 3) Auto-redirect after short pause
+        // 3) Auto-redirect after a short pause
         setTimeout(() => {
           router.replace('/profile');
         }, 1200);
       } catch (e) {
-        setSaveError(e.message || 'Failed to save results');
+        console.error('Save error:', e);
+        // Surface common Firestore issues
+        const msg =
+          e?.code === 'permission-denied'
+            ? 'Permission denied writing to Firestore. Check Firestore rules or authentication.'
+            : e?.message || 'Failed to save results.';
+        setSaveError(msg);
       } finally {
         setSaving(false);
       }
-    })();
-  }, [router.isReady, router.query, showDebug, user, router]);
+    };
 
+    doSave();
+  }, [user, economicScore, socialScore, userAnswers, router]);
+
+  // ----- Draw compass -----
   useEffect(() => {
-    if (economicScore === null || socialScore === null) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    // Clear & axes
     ctx.clearRect(0, 0, 400, 400);
     ctx.strokeStyle = '#ccc';
     ctx.beginPath();
@@ -146,7 +139,6 @@ export default function Results() {
     ctx.lineTo(400, 200);
     ctx.stroke();
 
-    // Labels
     ctx.font = '12px Arial';
     ctx.fillStyle = '#666';
     ctx.fillText('Left', 20, 210);
@@ -154,7 +146,7 @@ export default function Results() {
     ctx.fillText('Auth', 205, 20);
     ctx.fillText('Lib', 205, 390);
 
-    // Plot point (flip Y so positive social plots upward)
+    // Flip Y so positive social plots upward
     const x = 200 + economicScore * 20;
     const y = 200 - socialScore * 20;
 
@@ -164,11 +156,14 @@ export default function Results() {
     ctx.fill();
   }, [economicScore, socialScore]);
 
-  if (economicScore === null || socialScore === null) {
+  // ----- UI -----
+  const total = Array.isArray(questions) ? questions.length : 0;
+  if (!total) {
     return (
-      <div className="text-center mt-10">
-        <h1 className="text-2xl font-bold mb-4">Your Political Compass</h1>
-        <p>Calculating your results…</p>
+      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">Results unavailable</h1>
+        </div>
       </div>
     );
   }
@@ -191,14 +186,46 @@ export default function Results() {
           </div>
         </div>
 
-        {saving && (
+        {/* Save status */}
+        {user === undefined && (
+          <p className="mt-4 text-gray-600 text-center">Checking your session…</p>
+        )}
+        {user === null && (
+          <div className="mt-4 text-center">
+            <p className="text-gray-700 mb-2">
+              You’re not logged in. Log in to save your result to your profile.
+            </p>
+            <button
+              onClick={() => router.replace('/login')}
+              className="px-5 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+            >
+              Go to login
+            </button>
+          </div>
+        )}
+        {user && saving && (
           <p className="mt-4 text-gray-600 text-center">Saving your result…</p>
         )}
         {saveError && (
-          <p className="mt-2 text-red-600 text-center">Error: {saveError}</p>
+          <div className="mt-3 text-center">
+            <p className="text-red-600 mb-3">Error: {saveError}</p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => router.replace('/quiz')}
+                className="px-4 py-2 rounded border"
+              >
+                Back to Quiz
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded bg-indigo-600 text-white"
+              >
+                Retry Save
+              </button>
+            </div>
+          </div>
         )}
-
-        {saved && (
+        {user && !saving && !saveError && saved && (
           <div className="mt-4 text-center">
             <button
               onClick={() => router.replace('/profile')}
@@ -208,17 +235,10 @@ export default function Results() {
             </button>
           </div>
         )}
-
-        {/* Debug panel only if NEXT_PUBLIC_DEBUG=1 */}
-        {showDebug && debug && (
-          <div className="text-left max-w-xl mx-auto mt-6 p-4 border rounded bg-gray-50">
-            <h2 className="font-semibold mb-2">Debug</h2>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-{JSON.stringify(debug, null, 2)}
-            </pre>
-          </div>
-        )}
       </div>
     </div>
   );
 }
+
+// Client-only to avoid hydration mismatches
+export default dynamic(() => Promise.resolve(ResultsInner), { ssr: false });
