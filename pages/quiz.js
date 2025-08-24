@@ -1,4 +1,5 @@
 // pages/quiz.js
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import questions from "../data/questions";
@@ -6,29 +7,28 @@ import questions from "../data/questions";
 import { auth } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 
-export default function Quiz() {
+function QuizInner() {
   const router = useRouter();
   const [user, setUser] = useState(undefined); // undefined = loading, null = not logged in
   const [answers, setAnswers] = useState({}); // { [id]: 1..5 }
   const [current, setCurrent] = useState(0);
 
-  // Auth guard
+  // Auth guard (client only)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
   }, []);
 
-  // If not logged in, redirect to /login
+  // Redirect unauthenticated users
   useEffect(() => {
-    if (user === null) {
-      router.replace("/login");
-    }
+    if (user === null) router.replace("/login");
   }, [user, router]);
 
-  // Basic data guards
+  // Data guards
   const total = Array.isArray(questions) ? questions.length : 0;
-  const safeIndex = Number.isFinite(current) && current >= 0 && current < total ? current : 0;
   const hasQuestions = total > 0;
+  const safeIndex =
+    Number.isFinite(current) && current >= 0 && current < total ? current : 0;
   const q = hasQuestions ? questions[safeIndex] : null;
 
   if (user === undefined) {
@@ -39,7 +39,7 @@ export default function Quiz() {
     );
   }
   if (user === null) {
-    return null; // brief flash before router.replace
+    return null; // brief flash before redirect to /login
   }
 
   if (!hasQuestions || !q || !q.id || !q.text) {
@@ -59,7 +59,6 @@ export default function Quiz() {
   const progressPercent = Math.round((answeredCount / total) * 100);
 
   const selectAnswer = (value) => {
-    // value must be 1..5
     const v = Number(value);
     if (v >= 1 && v <= 5) {
       setAnswers((prev) => ({ ...prev, [q.id]: v }));
@@ -70,11 +69,9 @@ export default function Quiz() {
     if (safeIndex < total - 1) {
       setCurrent((c) => c + 1);
     } else {
-      // Submit to results (defaults to 3 for any unanswered)
       const answerArray = questions.map((qq) => {
         const v = answers[qq.id];
-        return Number.isFinite(v) ? v : 3;
-        // 3 = neutral
+        return Number.isFinite(v) ? v : 3; // neutral default
       });
       router.push(`/results?answers=${answerArray.join(",")}`);
     }
@@ -159,7 +156,7 @@ export default function Quiz() {
           Question {safeIndex + 1} of {total}
         </p>
 
-        {/* Progress bar that automatically reflects number of questions */}
+        {/* Progress bar */}
         <div className="mt-4 h-3 w-full bg-gray-200 rounded-full overflow-hidden">
           <div
             className="h-3 bg-indigo-600 transition-all"
@@ -216,3 +213,6 @@ export default function Quiz() {
     </div>
   );
 }
+
+// Disable SSR for this page to avoid hydration issues with auth/state
+export default dynamic(() => Promise.resolve(QuizInner), { ssr: false });
