@@ -3,21 +3,13 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { db } from "../../lib/firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  getDoc,
-} from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import questions from "../../data/questions";
 
 function PublicProfileInner() {
   const router = useRouter();
   const { username } = router.query;
 
-  // UI state (no conditional hooks)
   const [activeTab, setActiveTab] = useState("profile"); // 'profile' | 'answers'
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -26,14 +18,13 @@ function PublicProfileInner() {
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
 
-  // For “answers” tab
   const [loadingAnswers, setLoadingAnswers] = useState(false);
   const [answersError, setAnswersError] = useState("");
-  const [hotResponses, setHotResponses] = useState([]); // [{... , topic?}]
+  const [hotResponses, setHotResponses] = useState([]);
 
   const canvasRef = useRef(null);
 
-  // Load profile (by username) + latest result (public read)
+  // Load profile + latest result
   useEffect(() => {
     const load = async () => {
       if (!username) return;
@@ -42,11 +33,7 @@ function PublicProfileInner() {
       setError("");
 
       try {
-        // 1) profile by username
-        const qProf = query(
-          collection(db, "profiles"),
-          where("username", "==", String(username))
-        );
+        const qProf = query(collection(db, "profiles"), where("username", "==", String(username)));
         const profSnap = await getDocs(qProf);
         if (profSnap.empty) {
           setNotFound(true);
@@ -56,14 +43,9 @@ function PublicProfileInner() {
         const profData = { id: profDoc.id, ...profDoc.data() };
         setProfile(profData);
 
-        // 2) latest result (by lastResultId)
         if (profData.lastResultId) {
           const resSnap = await getDoc(doc(db, "results", profData.lastResultId));
-          if (resSnap.exists()) {
-            setResult(resSnap.data());
-          } else {
-            setResult(null);
-          }
+          setResult(resSnap.exists() ? resSnap.data() : null);
         } else {
           setResult(null);
         }
@@ -78,45 +60,55 @@ function PublicProfileInner() {
     load();
   }, [username]);
 
-  // Draw compass (adjusted: base + deltas)
+  // Draw compass (runs when tab changes back to "profile" too)
   useEffect(() => {
+    if (activeTab !== "profile") return;
     if (!profile || !result) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
 
-    const baseE = Number(result.economicScore) || 0;
-    const baseS = Number(result.socialScore) || 0;
-    const dE = Number(profile.hotEconDelta || 0);
-    const dS = Number(profile.hotSocDelta || 0);
+    // ensure DOM is painted before drawing
+    const raf = requestAnimationFrame(() => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    const econ = baseE + dE;
-    const soc = baseS + dS;
+      const baseE = Number(result.economicScore) || 0;
+      const baseS = Number(result.socialScore) || 0;
+      const dE = Number(profile.hotEconDelta || 0);
+      const dS = Number(profile.hotSocDelta || 0);
 
-    ctx.clearRect(0, 0, 400, 400);
-    ctx.strokeStyle = "#ccc";
-    ctx.beginPath();
-    ctx.moveTo(200, 0); ctx.lineTo(200, 400);
-    ctx.moveTo(0, 200); ctx.lineTo(400, 200);
-    ctx.stroke();
+      const econ = baseE + dE;
+      const soc = baseS + dS;
 
-    ctx.font = "12px Arial";
-    ctx.fillStyle = "#666";
-    ctx.fillText("Left", 20, 210);
-    ctx.fillText("Right", 360, 210);
-    ctx.fillText("Auth", 205, 20);
-    ctx.fillText("Lib", 205, 390);
+      ctx.clearRect(0, 0, 400, 400);
+      ctx.strokeStyle = "#ccc";
+      ctx.beginPath();
+      // axes
+      ctx.moveTo(200, 0); ctx.lineTo(200, 400);
+      ctx.moveTo(0, 200); ctx.lineTo(400, 200);
+      ctx.stroke();
 
-    const x = 200 + econ * 20;
-    const y = 200 - soc * 20;
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#666";
+      ctx.fillText("Left", 20, 210);
+      ctx.fillText("Right", 360, 210);
+      ctx.fillText("Auth", 205, 20);
+      ctx.fillText("Lib", 205, 390);
 
-    ctx.beginPath();
-    ctx.arc(x, y, 6, 0, Math.PI * 2);
-    ctx.fillStyle = "red";
-    ctx.fill();
-  }, [profile, result]);
+      const x = 200 + econ * 20;
+      const y = 200 - soc * 20;
 
-  // Load public answers when Answers tab is opened
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "red";
+      ctx.fill();
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [activeTab, profile, result]);
+
+  // Load answers when Answers tab opens
   useEffect(() => {
     const loadAnswers = async () => {
       if (activeTab !== "answers") return;
@@ -125,15 +117,10 @@ function PublicProfileInner() {
       setLoadingAnswers(true);
       setAnswersError("");
       try {
-        // Hot Topic responses by uid (PUBLIC READ needed in rules)
-        const respQ = query(
-          collection(db, "hotTopicResponses"),
-          where("uid", "==", profile.id)
-        );
+        const respQ = query(collection(db, "hotTopicResponses"), where("uid", "==", profile.id));
         const respSnap = await getDocs(respQ);
         const responses = respSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Attach topic text/metadata for each
         const enriched = [];
         for (const r of responses) {
           let topicData = undefined;
@@ -141,14 +128,11 @@ function PublicProfileInner() {
             try {
               const tSnap = await getDoc(doc(db, "hotTopics", r.topicId));
               if (tSnap.exists()) topicData = tSnap.data();
-            } catch {
-              // ignore
-            }
+            } catch { /* ignore */ }
           }
           enriched.push({ ...r, topic: topicData });
         }
 
-        // Newest first
         enriched.sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() ?? 0;
           const tb = b.createdAt?.toMillis?.() ?? 0;
@@ -158,9 +142,7 @@ function PublicProfileInner() {
         setHotResponses(enriched);
       } catch (e) {
         console.error("Public answers load error:", e);
-        setAnswersError(
-          e?.code ? `Error loading answers: ${e.code}` : "Failed to load answers."
-        );
+        setAnswersError(e?.code ? `Error loading answers: ${e.code}` : "Failed to load answers.");
       } finally {
         setLoadingAnswers(false);
       }
@@ -169,29 +151,21 @@ function PublicProfileInner() {
     loadAnswers();
   }, [activeTab, profile]);
 
-  // Helpers (no hooks)
+  // Helpers
   const fmt2 = (n) => {
     const num = Number(n);
     return Number.isFinite(num) ? num.toFixed(2) : "0.00";
   };
   const firstName =
-    (profile?.displayName || profile?.username || "")
-      .trim()
-      .split(" ")[0] || (profile ? "User" : "");
-
+    (profile?.displayName || profile?.username || "").trim().split(" ")[0] ||
+    (profile ? "User" : "");
   const likertLabel = (n) => {
-    const map = {
-      1: "Strongly Disagree",
-      2: "Disagree",
-      3: "Neutral",
-      4: "Agree",
-      5: "Strongly Agree",
-    };
+    const map = { 1: "Strongly Disagree", 2: "Disagree", 3: "Neutral", 4: "Agree", 5: "Strongly Agree" };
     return map[Number(n)] || String(n ?? "");
   };
   const yesNoFromValue = (n) => (Number(n) >= 3 ? "Yes" : "No");
 
-  // Build Compass answers list (from latest result.answers)
+  // Build Compass answers list from latest result
   const compassAnswers = (() => {
     const ans = (result && result.answers) || {};
     const list = Array.isArray(questions) ? questions : [];
@@ -211,7 +185,6 @@ function PublicProfileInner() {
     });
   })();
 
-  // Build Hot Topic answers list (from hotResponses + topics)
   const hotAnswers = hotResponses.map((r) => {
     const t = r.topic || {};
     const value = Number.isFinite(Number(r.value)) ? Number(r.value) : 3;
@@ -251,27 +224,19 @@ function PublicProfileInner() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="text-2xl font-bold mb-2 text-center">@{profile.username}</h1>
-      {displayName && <p className="text-center text-gray-700 mb-6">{displayName}</p>
-
-      }
+      {displayName && <p className="text-center text-gray-700 mb-6">{displayName}</p>}
 
       {/* Tabs */}
       <div className="flex justify-center gap-2 mb-6">
         <button
           onClick={() => setActiveTab("profile")}
-          className={[
-            "px-4 py-2 rounded",
-            activeTab === "profile" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
-          ].join(" ")}
+          className={["px-4 py-2 rounded", activeTab === "profile" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}
         >
           Profile
         </button>
         <button
           onClick={() => setActiveTab("answers")}
-          className={[
-            "px-4 py-2 rounded",
-            activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
-          ].join(" ")}
+          className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}
         >
           {firstName}&apos;s answers
         </button>
@@ -317,7 +282,6 @@ function PublicProfileInner() {
           {error && <p className="mt-4 text-red-600">{error}</p>}
         </div>
       ) : (
-        // Answers tab
         <div className="bg-white border rounded-xl p-6 shadow-sm">
           <h2 className="text-xl font-semibold mb-3">{firstName}&apos;s answers</h2>
 
@@ -368,9 +332,7 @@ function PublicProfileInner() {
                       </span>
                       {a.axis && <>Axis: {a.axis}</>}
                       {a.createdAt?.toDate && (
-                        <span className="ml-2 text-xs">
-                          · {a.createdAt.toDate().toLocaleString()}
-                        </span>
+                        <span className="ml-2 text-xs">· {a.createdAt.toDate().toLocaleString()}</span>
                       )}
                     </div>
                     <div className="font-medium">{a.text}</div>
@@ -389,5 +351,5 @@ function PublicProfileInner() {
   );
 }
 
-// Client-only to avoid hydration issues
+// Client-only
 export default dynamic(() => Promise.resolve(PublicProfileInner), { ssr: false });
