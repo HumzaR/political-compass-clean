@@ -1,4 +1,5 @@
 // pages/profile.js
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebase";
@@ -15,14 +16,17 @@ import {
 } from "firebase/firestore";
 import questions from "../data/questions";
 
-export default function ProfilePage() {
+function ProfileInner() {
   const router = useRouter();
+
+  // --- Auth & UI state (hooks run every render; no early returns before hooks) ---
   const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in
   const [activeTab, setActiveTab] = useState("profile"); // 'profile' | 'answers'
 
-  // Profile form
+  // Profile form state
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(""); // profile form errors
+  const [pageError, setPageError] = useState(""); // loader/runtime errors
 
   const [form, setForm] = useState({
     displayName: "",
@@ -34,7 +38,7 @@ export default function ProfilePage() {
     gender: "",
   });
 
-  // Base result & deltas (for adjusted scores)
+  // Latest result & deltas
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [redirectingToQuiz, setRedirectingToQuiz] = useState(false);
   const [results, setResults] = useState(null);
@@ -42,7 +46,8 @@ export default function ProfilePage() {
 
   // Answers tab data
   const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [hotResponses, setHotResponses] = useState([]); // [{id, topicId, value, createdAt, topic?:{text,type,axis,weight,direction}}]
+  const [hotResponses, setHotResponses] = useState([]); // [{... , topic?}]
+  const [answersError, setAnswersError] = useState("");
 
   // --- Auth guard ---
   useEffect(() => {
@@ -54,11 +59,30 @@ export default function ProfilePage() {
     if (user === null) router.replace("/login");
   }, [user, router]);
 
+  // --- Helpers ---
+  const fmt2 = (n) => {
+    const num = Number(n);
+    return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+    };
+  const firstName = (form.displayName || "").trim().split(" ")[0] || "Your";
+  const likertLabel = (n) => {
+    const map = {
+      1: "Strongly Disagree",
+      2: "Disagree",
+      3: "Neutral",
+      4: "Agree",
+      5: "Strongly Agree",
+    };
+    return map[Number(n)] || String(n ?? "");
+  };
+  const yesNoFromValue = (n) => (Number(n) >= 3 ? "Yes" : "No");
+
   // --- Load profile + latest results + deltas ---
   useEffect(() => {
     const loadProfile = async () => {
       if (!user) return;
       setLoadingProfile(true);
+      setPageError("");
 
       try {
         const profRef = doc(db, "profiles", user.uid);
@@ -87,7 +111,6 @@ export default function ProfilePage() {
         }
 
         if (!lastResultId) {
-          // Force first-time users to take quiz before profile
           setRedirectingToQuiz(true);
           router.replace("/quiz");
           return;
@@ -101,6 +124,11 @@ export default function ProfilePage() {
           router.replace("/quiz");
           return;
         }
+      } catch (e) {
+        console.error("Profile load error:", e);
+        setPageError(
+          e?.code ? `Error loading profile/results: ${e.code}` : "Failed to load profile."
+        );
       } finally {
         setLoadingProfile(false);
       }
@@ -109,13 +137,14 @@ export default function ProfilePage() {
     if (user && user !== null) loadProfile();
   }, [user, router]);
 
-  // --- Load Hot Topic responses (owner-only per rules) when Answers tab is opened ---
+  // --- Load Hot Topic responses when Answers tab opened ---
   useEffect(() => {
     const loadAnswers = async () => {
       if (!user || activeTab !== "answers") return;
       setLoadingAnswers(true);
+      setAnswersError("");
+
       try {
-        // 1) fetch this user's responses
         const respQ = query(
           collection(db, "hotTopicResponses"),
           where("uid", "==", user.uid)
@@ -123,25 +152,33 @@ export default function ProfilePage() {
         const respSnap = await getDocs(respQ);
         const responses = respSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // 2) fetch each referenced topic (minimal N+1; ok for MVP)
-        const withTopics = [];
+        // fetch each topic
+        const enriched = [];
         for (const r of responses) {
           let topicData = undefined;
           if (r.topicId) {
-            const tSnap = await getDoc(doc(db, "hotTopics", r.topicId));
-            if (tSnap.exists()) topicData = tSnap.data();
+            try {
+              const tSnap = await getDoc(doc(db, "hotTopics", r.topicId));
+              if (tSnap.exists()) topicData = tSnap.data();
+            } catch (e) {
+              // non-fatal: topic might be deleted
+            }
           }
-          withTopics.push({ ...r, topic: topicData });
+          enriched.push({ ...r, topic: topicData });
         }
 
-        // sort newest first
-        withTopics.sort((a, b) => {
+        enriched.sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() ?? 0;
           const tb = b.createdAt?.toMillis?.() ?? 0;
           return tb - ta;
         });
 
-        setHotResponses(withTopics);
+        setHotResponses(enriched);
+      } catch (e) {
+        console.error("Answers load error:", e);
+        setAnswersError(
+          e?.code ? `Error loading answers: ${e.code}` : "Failed to load answers."
+        );
       } finally {
         setLoadingAnswers(false);
       }
@@ -150,6 +187,7 @@ export default function ProfilePage() {
     loadAnswers();
   }, [activeTab, user]);
 
+  // --- Form handlers ---
   const handleChange = (e) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
@@ -161,7 +199,7 @@ export default function ProfilePage() {
     setError("");
 
     try {
-      // Unique username check
+      // unique username
       if (form.username) {
         const qRef = query(
           collection(db, "profiles"),
@@ -174,11 +212,7 @@ export default function ProfilePage() {
 
       await setDoc(
         doc(db, "profiles", user.uid),
-        {
-          ...form,
-          uid: user.uid,
-          updatedAt: serverTimestamp(),
-        },
+        { ...form, uid: user.uid, updatedAt: serverTimestamp() },
         { merge: true }
       );
 
@@ -190,40 +224,20 @@ export default function ProfilePage() {
     }
   };
 
-  // --- Derived values for scores ---
-  const baseEcon = Number(results?.economicScore || 0);
-  const baseSoc = Number(results?.socialScore || 0);
-  const adjEcon = (baseEcon + Number(deltas.hotEconDelta || 0)).toFixed(2);
-  const adjSoc = (baseSoc + Number(deltas.hotSocDelta || 0)).toFixed(2);
+  // --- Derived values (safe) ---
+  const baseEcon = Number(results?.economicScore ?? 0);
+  const baseSoc = Number(results?.socialScore ?? 0);
+  const adjEcon = baseEcon + Number(deltas?.hotEconDelta ?? 0);
+  const adjSoc = baseSoc + Number(deltas?.hotSocDelta ?? 0);
 
-  // UI guards
-  if (user === undefined) return <p className="text-center mt-10">Checking your session…</p>;
-  if (user === null) return null;
-  if (redirectingToQuiz) return <p className="text-center mt-10">Please complete the quiz first… Redirecting…</p>;
-  if (loadingProfile) return <p className="text-center mt-10">Loading your profile…</p>;
-
-  // Helpers for Answers tab
-  const firstName = (form.displayName || "").trim().split(" ")[0] || "Your";
-  const likertLabel = (n) => {
-    const map = {
-      1: "Strongly Disagree",
-      2: "Disagree",
-      3: "Neutral",
-      4: "Agree",
-      5: "Strongly Agree",
-    };
-    return map[n] || String(n);
-  };
-  const yesNoFromValue = (n) => (Number(n) >= 3 ? "Yes" : "No");
-
-  // Build display list for Compass answers from latest results
+  // Build Compass answers list safely
   const compassAnswers = useMemo(() => {
-    const ans = results?.answers || {};
-    // Merge in question metadata
-    return questions.map((q) => {
-      const value = Number(ans[q.id]);
-      const label =
-        q.type === "yesno" ? yesNoFromValue(value) : likertLabel(value);
+    const ans = (results && results.answers) || {};
+    const list = Array.isArray(questions) ? questions : [];
+    return list.map((q) => {
+      const valueRaw = ans[q.id];
+      const value = Number.isFinite(Number(valueRaw)) ? Number(valueRaw) : 3;
+      const label = q.type === "yesno" ? yesNoFromValue(value) : likertLabel(value);
       return {
         id: `compass-${q.id}`,
         source: "Political Compass",
@@ -236,12 +250,12 @@ export default function ProfilePage() {
     });
   }, [results]);
 
-  // Build display list for Hot Topic answers
+  // Hot topic answers list safely
   const hotAnswers = useMemo(
     () =>
       hotResponses.map((r) => {
         const t = r.topic || {};
-        const value = Number(r.value);
+        const value = Number.isFinite(Number(r.value)) ? Number(r.value) : 3;
         const label = (t.type || "scale") === "yesno" ? yesNoFromValue(value) : likertLabel(value);
         return {
           id: `hot-${r.id}`,
@@ -260,9 +274,19 @@ export default function ProfilePage() {
   const publicUrl =
     form.username ? `${typeof window !== "undefined" ? window.location.origin : ""}/u/${form.username}` : "";
 
+  // --- Conditional renders AFTER hooks are defined ---
+  if (user === undefined) return <p className="text-center mt-10">Checking your session…</p>;
+  if (user === null) return null;
+  if (redirectingToQuiz) return <p className="text-center mt-10">Please complete the quiz first… Redirecting…</p>;
+  if (loadingProfile) return <p className="text-center mt-10">Loading your profile…</p>;
+
   return (
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-2 text-center">Your Profile</h1>
+
+      {pageError && (
+        <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{pageError}</div>
+      )}
 
       {/* Tabs */}
       <div className="flex justify-center gap-2 mb-6">
@@ -270,9 +294,7 @@ export default function ProfilePage() {
           onClick={() => setActiveTab("profile")}
           className={[
             "px-4 py-2 rounded",
-            activeTab === "profile"
-              ? "bg-indigo-600 text-white"
-              : "bg-gray-200 text-gray-800",
+            activeTab === "profile" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
           ].join(" ")}
         >
           Profile
@@ -281,12 +303,10 @@ export default function ProfilePage() {
           onClick={() => setActiveTab("answers")}
           className={[
             "px-4 py-2 rounded",
-            activeTab === "answers"
-              ? "bg-indigo-600 text-white"
-              : "bg-gray-200 text-gray-800",
+            activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
           ].join(" ")}
         >
-          {firstName}'s answers
+          {firstName}&apos;s answers
         </button>
       </div>
 
@@ -388,11 +408,7 @@ export default function ProfilePage() {
             <h3 className="font-semibold mb-2">Public profile link</h3>
             {form.username ? (
               <div className="flex items-center gap-2">
-                <input
-                  readOnly
-                  value={publicUrl}
-                  className="flex-1 border p-2 rounded bg-white"
-                />
+                <input readOnly value={publicUrl} className="flex-1 border p-2 rounded bg-white" />
                 <button
                   className="px-3 py-2 bg-indigo-600 text-white rounded"
                   onClick={() => publicUrl && navigator.clipboard?.writeText(publicUrl)}
@@ -409,17 +425,17 @@ export default function ProfilePage() {
           {results && (
             <div className="mt-8 bg-gray-50 p-6 rounded shadow">
               <h2 className="text-xl font-semibold mb-2">Latest Quiz Result</h2>
-              <p><strong>Economic Score (base):</strong> {baseEcon.toFixed(2)}</p>
-              <p><strong>Social Score (base):</strong> {baseSoc.toFixed(2)}</p>
+              <p><strong>Economic Score (base):</strong> {fmt2(baseEcon)}</p>
+              <p><strong>Social Score (base):</strong> {fmt2(baseSoc)}</p>
               <div className="mt-3">
                 <p><strong>Adjustments from Hot Topics:</strong></p>
-                <p>Economic Δ: {Number(deltas.hotEconDelta || 0).toFixed(2)}</p>
-                <p>Social Δ: {Number(deltas.hotSocDelta || 0).toFixed(2)}</p>
+                <p>Economic Δ: {fmt2(deltas?.hotEconDelta)}</p>
+                <p>Social Δ: {fmt2(deltas?.hotSocDelta)}</p>
               </div>
               <div className="mt-3">
                 <p className="font-semibold">Adjusted Scores</p>
-                <p>Economic (adjusted): {adjEcon}</p>
-                <p>Social (adjusted): {adjSoc}</p>
+                <p>Economic (adjusted): {fmt2(adjEcon)}</p>
+                <p>Social (adjusted): {fmt2(adjSoc)}</p>
               </div>
             </div>
           )}
@@ -427,7 +443,11 @@ export default function ProfilePage() {
       ) : (
         // --- Answers tab ---
         <div className="bg-white p-6 rounded shadow">
-          <h2 className="text-xl font-semibold mb-4">{firstName}'s answers</h2>
+          <h2 className="text-xl font-semibold mb-4">{firstName}&apos;s answers</h2>
+
+          {answersError && (
+            <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>
+          )}
 
           {loadingAnswers ? (
             <p>Loading answers…</p>
@@ -492,3 +512,6 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+// Client-only to avoid hydration issues
+export default dynamic(() => Promise.resolve(ProfileInner), { ssr: false });
