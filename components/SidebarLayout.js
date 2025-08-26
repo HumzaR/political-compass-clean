@@ -5,7 +5,7 @@ import { useRouter } from "next/router";
 export default function SidebarLayout({ children }) {
   const router = useRouter();
 
-  const NavLink = ({ href, label, icon = null }) => {
+  const NavLink = ({ href, label }) => {
     const active = router.pathname === href;
     return (
       <Link
@@ -17,7 +17,6 @@ export default function SidebarLayout({ children }) {
             : "text-gray-700 hover:bg-gray-100",
         ].join(" ")}
       >
-        {icon}
         <span>{label}</span>
       </Link>
     );
@@ -42,14 +41,11 @@ export default function SidebarLayout({ children }) {
             <NavLink href="/hot-topics" label="Hot Topics" />
           </nav>
 
-          {/* Footer spacer */}
-          <div className="mt-auto pt-4 text-xs text-gray-400">
-            v0.1 • MVP
-          </div>
+          <div className="mt-auto pt-4 text-xs text-gray-400">v0.1 • MVP</div>
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* Main content area */}
       <main className="min-h-screen">
         {children}
       </main>
