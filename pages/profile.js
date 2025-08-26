@@ -1,6 +1,6 @@
 // pages/profile.js
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -19,14 +19,13 @@ import questions from "../data/questions";
 function ProfileInner() {
   const router = useRouter();
 
-  // --- Auth & UI state (hooks run every render; no early returns before hooks) ---
+  // ---- State (hooks at top; no conditionals) ----
   const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in
   const [activeTab, setActiveTab] = useState("profile"); // 'profile' | 'answers'
 
-  // Profile form state
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(""); // profile form errors
-  const [pageError, setPageError] = useState(""); // loader/runtime errors
+  const [error, setError] = useState("");
+  const [pageError, setPageError] = useState("");
 
   const [form, setForm] = useState({
     displayName: "",
@@ -38,18 +37,16 @@ function ProfileInner() {
     gender: "",
   });
 
-  // Latest result & deltas
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [redirectingToQuiz, setRedirectingToQuiz] = useState(false);
   const [results, setResults] = useState(null);
   const [deltas, setDeltas] = useState({ hotEconDelta: 0, hotSocDelta: 0 });
 
-  // Answers tab data
   const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [hotResponses, setHotResponses] = useState([]); // [{... , topic?}]
+  const [hotResponses, setHotResponses] = useState([]);
   const [answersError, setAnswersError] = useState("");
 
-  // --- Auth guard ---
+  // ---- Auth ----
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
@@ -59,11 +56,11 @@ function ProfileInner() {
     if (user === null) router.replace("/login");
   }, [user, router]);
 
-  // --- Helpers ---
+  // ---- Helpers (pure) ----
   const fmt2 = (n) => {
     const num = Number(n);
     return Number.isFinite(num) ? num.toFixed(2) : "0.00";
-    };
+  };
   const firstName = (form.displayName || "").trim().split(" ")[0] || "Your";
   const likertLabel = (n) => {
     const map = {
@@ -77,7 +74,7 @@ function ProfileInner() {
   };
   const yesNoFromValue = (n) => (Number(n) >= 3 ? "Yes" : "No");
 
-  // --- Load profile + latest results + deltas ---
+  // ---- Load profile + latest result + deltas ----
   useEffect(() => {
     const loadProfile = async () => {
       if (!user) return;
@@ -118,7 +115,7 @@ function ProfileInner() {
 
         const resSnap = await getDoc(doc(db, "results", lastResultId));
         if (resSnap.exists()) {
-          setResults(resSnap.data()); // includes .answers map
+          setResults(resSnap.data()); // has .answers map
         } else {
           setRedirectingToQuiz(true);
           router.replace("/quiz");
@@ -137,7 +134,7 @@ function ProfileInner() {
     if (user && user !== null) loadProfile();
   }, [user, router]);
 
-  // --- Load Hot Topic responses when Answers tab opened ---
+  // ---- Load hot topic responses when tab opens ----
   useEffect(() => {
     const loadAnswers = async () => {
       if (!user || activeTab !== "answers") return;
@@ -152,7 +149,6 @@ function ProfileInner() {
         const respSnap = await getDocs(respQ);
         const responses = respSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // fetch each topic
         const enriched = [];
         for (const r of responses) {
           let topicData = undefined;
@@ -160,8 +156,8 @@ function ProfileInner() {
             try {
               const tSnap = await getDoc(doc(db, "hotTopics", r.topicId));
               if (tSnap.exists()) topicData = tSnap.data();
-            } catch (e) {
-              // non-fatal: topic might be deleted
+            } catch {
+              // topic might be deleted; ignore
             }
           }
           enriched.push({ ...r, topic: topicData });
@@ -187,7 +183,7 @@ function ProfileInner() {
     loadAnswers();
   }, [activeTab, user]);
 
-  // --- Form handlers ---
+  // ---- Handlers ----
   const handleChange = (e) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
@@ -199,7 +195,7 @@ function ProfileInner() {
     setError("");
 
     try {
-      // unique username
+      // Ensure unique username
       if (form.username) {
         const qRef = query(
           collection(db, "profiles"),
@@ -224,57 +220,50 @@ function ProfileInner() {
     }
   };
 
-  // --- Derived values (safe) ---
+  // ---- Derived values (NO hooks) ----
   const baseEcon = Number(results?.economicScore ?? 0);
   const baseSoc = Number(results?.socialScore ?? 0);
   const adjEcon = baseEcon + Number(deltas?.hotEconDelta ?? 0);
   const adjSoc = baseSoc + Number(deltas?.hotSocDelta ?? 0);
 
-  // Build Compass answers list safely
-  const compassAnswers = useMemo(() => {
-    const ans = (results && results.answers) || {};
-    const list = Array.isArray(questions) ? questions : [];
-    return list.map((q) => {
-      const valueRaw = ans[q.id];
-      const value = Number.isFinite(Number(valueRaw)) ? Number(valueRaw) : 3;
-      const label = q.type === "yesno" ? yesNoFromValue(value) : likertLabel(value);
-      return {
-        id: `compass-${q.id}`,
-        source: "Political Compass",
-        text: q.text,
-        type: q.type,
-        axis: q.axis,
-        value,
-        label,
-      };
-    });
-  }, [results]);
+  // Compass answers list built each render (no hooks)
+  const compassAnswers = (Array.isArray(questions) ? questions : []).map((q) => {
+    const ansMap = (results && results.answers) || {};
+    const valueRaw = ansMap[q.id];
+    const value = Number.isFinite(Number(valueRaw)) ? Number(valueRaw) : 3;
+    const label = q.type === "yesno" ? yesNoFromValue(value) : likertLabel(value);
+    return {
+      id: `compass-${q.id}`,
+      source: "Political Compass",
+      text: q.text,
+      type: q.type,
+      axis: q.axis,
+      value,
+      label,
+    };
+  });
 
-  // Hot topic answers list safely
-  const hotAnswers = useMemo(
-    () =>
-      hotResponses.map((r) => {
-        const t = r.topic || {};
-        const value = Number.isFinite(Number(r.value)) ? Number(r.value) : 3;
-        const label = (t.type || "scale") === "yesno" ? yesNoFromValue(value) : likertLabel(value);
-        return {
-          id: `hot-${r.id}`,
-          source: "Hot Topic",
-          text: t.text || "(deleted topic)",
-          type: t.type || "scale",
-          axis: t.axis || "",
-          value,
-          label,
-          createdAt: r.createdAt,
-        };
-      }),
-    [hotResponses]
-  );
+  // Hot topic answers list built each render (no hooks)
+  const hotAnswers = hotResponses.map((r) => {
+    const t = r.topic || {};
+    const value = Number.isFinite(Number(r.value)) ? Number(r.value) : 3;
+    const label = (t.type || "scale") === "yesno" ? yesNoFromValue(value) : likertLabel(value);
+    return {
+      id: `hot-${r.id}`,
+      source: "Hot Topic",
+      text: t.text || "(deleted topic)",
+      type: t.type || "scale",
+      axis: t.axis || "",
+      value,
+      label,
+      createdAt: r.createdAt,
+    };
+  });
 
   const publicUrl =
     form.username ? `${typeof window !== "undefined" ? window.location.origin : ""}/u/${form.username}` : "";
 
-  // --- Conditional renders AFTER hooks are defined ---
+  // ---- Conditional UI (after all hooks) ----
   if (user === undefined) return <p className="text-center mt-10">Checking your session…</p>;
   if (user === null) return null;
   if (redirectingToQuiz) return <p className="text-center mt-10">Please complete the quiz first… Redirecting…</p>;
@@ -441,7 +430,7 @@ function ProfileInner() {
           )}
         </>
       ) : (
-        // --- Answers tab ---
+        // ---- Answers tab ----
         <div className="bg-white p-6 rounded shadow">
           <h2 className="text-xl font-semibold mb-4">{firstName}&apos;s answers</h2>
 
@@ -453,7 +442,7 @@ function ProfileInner() {
             <p>Loading answers…</p>
           ) : (
             <>
-              {/* COMPASS ANSWERS */}
+              {/* Compass answers */}
               <div>
                 <h3 className="font-semibold mb-2">Political Compass</h3>
                 <div className="space-y-3">
@@ -475,7 +464,7 @@ function ProfileInner() {
                 </div>
               </div>
 
-              {/* HOT TOPIC ANSWERS */}
+              {/* Hot topic answers */}
               <div className="mt-6">
                 <h3 className="font-semibold mb-2">Hot Topics</h3>
                 {hotAnswers.length === 0 ? (
