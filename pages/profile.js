@@ -1,6 +1,6 @@
 // pages/profile.js
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -23,7 +23,7 @@ function ProfileInner() {
   }, [user, router]);
 
   // State
-  const [activeTab, setActiveTab] = useState("overview"); // 'overview' | 'answers'
+  const [activeTab, setActiveTab] = useState("overview");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [pageError, setPageError] = useState("");
   const [profile, setProfile] = useState(null);
@@ -83,56 +83,74 @@ function ProfileInner() {
     if (user) load();
   }, [user, router]);
 
-  // Hi-DPI canvas helper + draw
+  // Hi-DPI draw helper — ALWAYS draws axes/grid; draws point if scores provided
   const drawCompass = (canvas, econ, soc) => {
     if (!canvas) return;
     const dpr = typeof window !== "undefined" ? Math.max(1, window.devicePixelRatio || 1) : 1;
-
-    // Logical size
     const W = 400, H = 400;
-    // Set backing store size
+
+    // Backing store size
     canvas.width = W * dpr;
     canvas.height = H * dpr;
-    // Set CSS display size
+    // CSS size
     canvas.style.width = `${W}px`;
     canvas.style.height = `${H}px`;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // scale drawing to DPR
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Clear
     ctx.clearRect(0, 0, W, H);
 
-    // Axes/grid (ALWAYS draw these)
-    ctx.strokeStyle = "#ccc";
+    // Light grid
+    ctx.strokeStyle = "#e5e7eb"; // tailwind gray-200
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let gx = 0; gx <= W; gx += 40) {
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, H);
+    }
+    for (let gy = 0; gy <= H; gy += 40) {
+      ctx.moveTo(0, gy); ctx.lineTo(W, gy);
+    }
+    ctx.stroke();
+
+    // Axes (darker)
+    ctx.strokeStyle = "#374151"; // gray-700
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
     ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
     ctx.stroke();
 
+    // Labels
+    ctx.fillStyle = "#374151";
     ctx.font = "12px Arial";
-    ctx.fillStyle = "#666";
-    ctx.fillText("Left", 20, H / 2 + 10);
-    ctx.fillText("Right", W - 40, H / 2 + 10);
-    ctx.fillText("Auth", W / 2 + 5, 20);
-    ctx.fillText("Lib", W / 2 + 5, H - 10);
+    ctx.fillText("Left", 10, H / 2 - 8);
+    ctx.fillText("Right", W - 40, H / 2 - 8);
+    ctx.fillText("Auth", W / 2 + 8, 14);
+    ctx.fillText("Lib", W / 2 + 8, H - 8);
 
-    // Draw point ONLY if we have scores
+    // Point
     if (typeof econ === "number" && typeof soc === "number" && !Number.isNaN(econ) && !Number.isNaN(soc)) {
       const x = W / 2 + econ * 20;
-      const y = H / 2 - soc * 20; // up is authoritarian
+      const y = H / 2 - soc * 20; // up = authoritarian
       ctx.beginPath();
       ctx.arc(x, y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "red";
+      ctx.fillStyle = "#ef4444"; // red-500
       ctx.fill();
     }
+
+    // Breadcrumb in console
+    // eslint-disable-next-line no-console
+    console.log("[Compass] drawn", { econ, soc });
   };
 
-  // Draw whenever tab visible OR data changes. Always draw axes; point if result present.
-  useEffect(() => {
+  // Draw as soon as the canvas is laid out + whenever data/tab change.
+  useLayoutEffect(() => {
     if (activeTab !== "overview") return;
     const canvas = canvasRef.current;
+
     const baseE = Number(result?.economicScore);
     const baseS = Number(result?.socialScore);
     const dE = Number(profile?.hotEconDelta || 0);
@@ -142,7 +160,9 @@ function ProfileInner() {
     const econ = hasResult ? baseE + dE : undefined;
     const soc = hasResult ? baseS + dS : undefined;
 
-    // Ensure DOM is ready
+    drawCompass(canvas, econ, soc);
+
+    // Also draw again on next paint in case of CSS/layout changes
     const raf = requestAnimationFrame(() => drawCompass(canvas, econ, soc));
     return () => cancelAnimationFrame(raf);
   }, [activeTab, profile, result]);
@@ -286,7 +306,7 @@ function ProfileInner() {
       {activeTab === "overview" ? (
         <div className="bg-white p-6 rounded shadow">
           <h2 className="text-xl font-semibold mb-3">Your Compass</h2>
-          {/* Canvas is always drawn (axes). Point appears when result exists */}
+          {/* Canvas always shows axes; point when result exists */}
           <canvas ref={canvasRef} width="400" height="400" className="border mx-auto" />
           {result ? (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
@@ -315,7 +335,7 @@ function ProfileInner() {
             <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>
           )}
 
-          {/* Compass Answers */}
+          {/* Compass */}
           <div className="mb-6">
             <h3 className="font-semibold mb-2">Political Compass</h3>
             {!result ? (
@@ -393,7 +413,11 @@ function ProfileInner() {
                   <div className="font-medium">{p.displayName || p.username || "User"}</div>
                   {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
                 </div>
-                {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
+                {p.username && (
+                  <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">
+                    View
+                  </Link>
+                )}
               </li>
             ))}
           </ul>
@@ -412,7 +436,11 @@ function ProfileInner() {
                   <div className="font-medium">{p.displayName || p.username || "User"}</div>
                   {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
                 </div>
-                {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
+                {p.username && (
+                  <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">
+                    View
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

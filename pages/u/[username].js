@@ -1,7 +1,7 @@
 // pages/u/[username].js
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -146,41 +146,60 @@ function PublicProfileInner() {
     if (!canvas) return;
     const dpr = typeof window !== "undefined" ? Math.max(1, window.devicePixelRatio || 1) : 1;
     const W = 400, H = 400;
+
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = `${W}px`;
     canvas.style.height = `${H}px`;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.clearRect(0, 0, W, H);
 
-    ctx.strokeStyle = "#ccc";
+    // Light grid
+    ctx.strokeStyle = "#e5e7eb";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let gx = 0; gx <= W; gx += 40) {
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, H);
+    }
+    for (let gy = 0; gy <= H; gy += 40) {
+      ctx.moveTo(0, gy); ctx.lineTo(W, gy);
+    }
+    ctx.stroke();
+
+    // Axes
+    ctx.strokeStyle = "#374151";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
     ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
     ctx.stroke();
 
+    ctx.fillStyle = "#374151";
     ctx.font = "12px Arial";
-    ctx.fillStyle = "#666";
-    ctx.fillText("Left", 20, H / 2 + 10);
-    ctx.fillText("Right", W - 40, H / 2 + 10);
-    ctx.fillText("Auth", W / 2 + 5, 20);
-    ctx.fillText("Lib", W / 2 + 5, H - 10);
+    ctx.fillText("Left", 10, H / 2 - 8);
+    ctx.fillText("Right", W - 40, H / 2 - 8);
+    ctx.fillText("Auth", W / 2 + 8, 14);
+    ctx.fillText("Lib", W / 2 + 8, H - 8);
 
     if (typeof econ === "number" && typeof soc === "number" && !Number.isNaN(econ) && !Number.isNaN(soc)) {
       const x = W / 2 + econ * 20;
       const y = H / 2 - soc * 20;
       ctx.beginPath();
       ctx.arc(x, y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = "red";
+      ctx.fillStyle = "#ef4444";
       ctx.fill();
     }
+
+    // eslint-disable-next-line no-console
+    console.log("[Compass:public] drawn", { econ, soc });
   };
 
-  // Always draw axes; draw point if result exists
-  useEffect(() => {
+  // Draw when tab visible OR data changes; always draw axes
+  useLayoutEffect(() => {
     if (activeTab !== "profile") return;
     const canvas = canvasRef.current;
 
@@ -193,6 +212,7 @@ function PublicProfileInner() {
     const econ = hasResult ? baseE + dE : undefined;
     const soc = hasResult ? baseS + dS : undefined;
 
+    drawCompass(canvas, econ, soc);
     const raf = requestAnimationFrame(() => drawCompass(canvas, econ, soc));
     return () => cancelAnimationFrame(raf);
   }, [activeTab, profile, result]);
@@ -332,14 +352,11 @@ function PublicProfileInner() {
               </div>
             )}
           </div>
-
-          {/* (Optional) Add public hot-topic answers here later */}
         </div>
       )}
 
       {/* Followers Modal */}
       <Modal title="Followers" isOpen={followersOpen} onClose={() => setFollowersOpen(false)}>
-        {/* Load list on open */}
         {followersOpen && (
           <FollowersList profileId={profile.id} setList={setFollowersList} list={followersList} />
         )}
@@ -385,7 +402,7 @@ function PublicProfileInner() {
   );
 }
 
-// Lazy list loaders (keep it simple; reuse rules)
+// Lazy list loaders
 function FollowersList({ profileId, setList, list }) {
   useEffect(() => {
     const run = async () => {
