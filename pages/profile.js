@@ -4,14 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import questions from "../data/questions";
 import Modal from "../components/Modal";
@@ -20,7 +13,7 @@ function ProfileInner() {
   const router = useRouter();
 
   // Auth
-  const [user, setUser] = useState(undefined); // undefined/loading, null=not logged in
+  const [user, setUser] = useState(undefined);
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
@@ -29,7 +22,7 @@ function ProfileInner() {
     if (user === null) router.replace("/login");
   }, [user, router]);
 
-  // Page state
+  // State
   const [activeTab, setActiveTab] = useState("overview"); // 'overview' | 'answers'
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [pageError, setPageError] = useState("");
@@ -41,17 +34,17 @@ function ProfileInner() {
   const [followingCount, setFollowingCount] = useState(0);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
-  const [followersList, setFollowersList] = useState([]); // array of profile docs
+  const [followersList, setFollowersList] = useState([]);
   const [followingList, setFollowingList] = useState([]);
 
-  // Answers tab
+  // Answers
   const [loadingAnswers, setLoadingAnswers] = useState(false);
   const [answersError, setAnswersError] = useState("");
   const [hotResponses, setHotResponses] = useState([]);
 
   const canvasRef = useRef(null);
 
-  // Load profile + latest result
+  // Load profile + latest result + counts
   useEffect(() => {
     const load = async () => {
       if (!user) return;
@@ -66,25 +59,18 @@ function ProfileInner() {
         const prof = { id: profSnap.id, ...profSnap.data() };
         setProfile(prof);
 
-        if (!prof.lastResultId) {
-          router.replace("/quiz");
-          return;
+        if (prof.lastResultId) {
+          const resSnap = await getDoc(doc(db, "results", prof.lastResultId));
+          setResult(resSnap.exists() ? resSnap.data() : null);
+        } else {
+          setResult(null);
         }
-        const resSnap = await getDoc(doc(db, "results", prof.lastResultId));
-        setResult(resSnap.exists() ? resSnap.data() : null);
 
-        // Load follower/following counts (no orderBy to avoid composite index)
-        const followersQ = query(
-          collection(db, "follows"),
-          where("followeeUid", "==", user.uid)
-        );
+        const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
         const followersSnap = await getDocs(followersQ);
         setFollowersCount(followersSnap.size);
 
-        const followingQ = query(
-          collection(db, "follows"),
-          where("followerUid", "==", user.uid)
-        );
+        const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
         const followingSnap = await getDocs(followingQ);
         setFollowingCount(followingSnap.size);
       } catch (e) {
@@ -97,60 +83,78 @@ function ProfileInner() {
     if (user) load();
   }, [user, router]);
 
-  // Draw compass when overview tab visible & data ready
-  useEffect(() => {
-    if (activeTab !== "overview") return;
-    if (!profile || !result) return;
-    const canvas = canvasRef.current;
+  // Hi-DPI canvas helper + draw
+  const drawCompass = (canvas, econ, soc) => {
     if (!canvas) return;
+    const dpr = typeof window !== "undefined" ? Math.max(1, window.devicePixelRatio || 1) : 1;
 
-    const raf = requestAnimationFrame(() => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+    // Logical size
+    const W = 400, H = 400;
+    // Set backing store size
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    // Set CSS display size
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
 
-      const baseE = Number(result.economicScore) || 0;
-      const baseS = Number(result.socialScore) || 0;
-      const dE = Number(profile.hotEconDelta || 0);
-      const dS = Number(profile.hotSocDelta || 0);
-      const econ = baseE + dE;
-      const soc = baseS + dS;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // scale drawing to DPR
 
-      ctx.clearRect(0, 0, 400, 400);
-      ctx.strokeStyle = "#ccc";
-      ctx.beginPath();
-      ctx.moveTo(200, 0); ctx.lineTo(200, 400);
-      ctx.moveTo(0, 200); ctx.lineTo(400, 200);
-      ctx.stroke();
+    // Clear
+    ctx.clearRect(0, 0, W, H);
 
-      ctx.font = "12px Arial";
-      ctx.fillStyle = "#666";
-      ctx.fillText("Left", 20, 210);
-      ctx.fillText("Right", 360, 210);
-      ctx.fillText("Auth", 205, 20);
-      ctx.fillText("Lib", 205, 390);
+    // Axes/grid (ALWAYS draw these)
+    ctx.strokeStyle = "#ccc";
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+    ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2);
+    ctx.stroke();
 
-      const x = 200 + econ * 20;
-      const y = 200 - soc * 20;
+    ctx.font = "12px Arial";
+    ctx.fillStyle = "#666";
+    ctx.fillText("Left", 20, H / 2 + 10);
+    ctx.fillText("Right", W - 40, H / 2 + 10);
+    ctx.fillText("Auth", W / 2 + 5, 20);
+    ctx.fillText("Lib", W / 2 + 5, H - 10);
 
+    // Draw point ONLY if we have scores
+    if (typeof econ === "number" && typeof soc === "number" && !Number.isNaN(econ) && !Number.isNaN(soc)) {
+      const x = W / 2 + econ * 20;
+      const y = H / 2 - soc * 20; // up is authoritarian
       ctx.beginPath();
       ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fillStyle = "red";
       ctx.fill();
-    });
+    }
+  };
+
+  // Draw whenever tab visible OR data changes. Always draw axes; point if result present.
+  useEffect(() => {
+    if (activeTab !== "overview") return;
+    const canvas = canvasRef.current;
+    const baseE = Number(result?.economicScore);
+    const baseS = Number(result?.socialScore);
+    const dE = Number(profile?.hotEconDelta || 0);
+    const dS = Number(profile?.hotSocDelta || 0);
+
+    const hasResult = result && Number.isFinite(baseE) && Number.isFinite(baseS);
+    const econ = hasResult ? baseE + dE : undefined;
+    const soc = hasResult ? baseS + dS : undefined;
+
+    // Ensure DOM is ready
+    const raf = requestAnimationFrame(() => drawCompass(canvas, econ, soc));
     return () => cancelAnimationFrame(raf);
   }, [activeTab, profile, result]);
 
-  // Load hot topic responses when Answers tab opens
+  // Answers loader
   useEffect(() => {
     const loadAnswers = async () => {
       if (activeTab !== "answers" || !user) return;
       setLoadingAnswers(true);
       setAnswersError("");
       try {
-        const respQ = query(
-          collection(db, "hotTopicResponses"),
-          where("uid", "==", user.uid)
-        );
+        const respQ = query(collection(db, "hotTopicResponses"), where("uid", "==", user.uid));
         const respSnap = await getDocs(respQ);
         const responses = respSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -165,11 +169,7 @@ function ProfileInner() {
           }
           enriched.push({ ...r, topic: topicData });
         }
-        enriched.sort((a, b) => {
-          const ta = a.createdAt?.toMillis?.() ?? 0;
-          const tb = b.createdAt?.toMillis?.() ?? 0;
-          return tb - ta;
-        });
+        enriched.sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0)).reverse();
         setHotResponses(enriched);
       } catch (e) {
         console.error(e);
@@ -186,8 +186,7 @@ function ProfileInner() {
     const x = Number(n);
     return Number.isFinite(x) ? x.toFixed(2) : "0.00";
   };
-  const firstName =
-    (profile?.displayName || profile?.username || "Your").split(" ")[0];
+  const firstName = (profile?.displayName || profile?.username || "Your").split(" ")[0];
   const likertLabel = (n) =>
     ({ 1: "Strongly Disagree", 2: "Disagree", 3: "Neutral", 4: "Agree", 5: "Strongly Agree" }[Number(n)] ||
       String(n ?? ""));
@@ -211,7 +210,7 @@ function ProfileInner() {
     });
   })();
 
-  // Open followers modal: fetch followers' profiles
+  // Followers modal loaders
   const openFollowers = async () => {
     if (!user) return;
     setFollowersOpen(true);
@@ -224,15 +223,10 @@ function ProfileInner() {
         const ps = await getDoc(doc(db, "profiles", uid));
         if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
       }
-      // simple sort by username
       profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
       setFollowersList(profs);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
-
-  // Open following modal: fetch followees' profiles
   const openFollowing = async () => {
     if (!user) return;
     setFollowingOpen(true);
@@ -247,9 +241,7 @@ function ProfileInner() {
       }
       profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
       setFollowingList(profs);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   if (user === undefined || loadingProfile) {
@@ -261,21 +253,11 @@ function ProfileInner() {
     <div className="max-w-3xl mx-auto p-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">My Profile</h1>
-
-        {/* Follows badges */}
         <div className="flex gap-3">
-          <button
-            onClick={openFollowers}
-            className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
-            title="View followers"
-          >
+          <button onClick={openFollowers} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">
             <span className="font-semibold">{followersCount}</span> Followers
           </button>
-          <button
-            onClick={openFollowing}
-            className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
-            title="View following"
-          >
+          <button onClick={openFollowing} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">
             <span className="font-semibold">{followingCount}</span> Following
           </button>
         </div>
@@ -289,60 +271,51 @@ function ProfileInner() {
       <div className="flex gap-2 mt-6 mb-6">
         <button
           onClick={() => setActiveTab("overview")}
-          className={[
-            "px-4 py-2 rounded",
-            activeTab === "overview" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
-          ].join(" ")}
+          className={["px-4 py-2 rounded", activeTab === "overview" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}
         >
           Overview
         </button>
         <button
           onClick={() => setActiveTab("answers")}
-          className={[
-            "px-4 py-2 rounded",
-            activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800",
-          ].join(" ")}
+          className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}
         >
-          {(profile?.displayName || profile?.username || "Your").split(" ")[0]}&apos;s answers
+          {firstName}&apos;s answers
         </button>
       </div>
 
       {activeTab === "overview" ? (
         <div className="bg-white p-6 rounded shadow">
           <h2 className="text-xl font-semibold mb-3">Your Compass</h2>
-          {!result ? (
-            <p className="text-gray-600">No quiz result yet. Please take the quiz.</p>
-          ) : (
-            <>
-              <canvas ref={canvasRef} width="400" height="400" className="border mx-auto" />
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-                <div>
-                  <div className="text-sm text-gray-500">Economic (base → adjusted)</div>
-                  <div className="text-lg font-semibold">
-                    {fmt2(Number(result?.economicScore || 0))} → {fmt2(Number(result?.economicScore || 0) + Number(profile?.hotEconDelta || 0))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-500">Social (base → adjusted)</div>
-                  <div className="text-lg font-semibold">
-                    {fmt2(Number(result?.socialScore || 0))} → {fmt2(Number(result?.socialScore || 0) + Number(profile?.hotSocDelta || 0))}
-                  </div>
+          {/* Canvas is always drawn (axes). Point appears when result exists */}
+          <canvas ref={canvasRef} width="400" height="400" className="border mx-auto" />
+          {result ? (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+              <div>
+                <div className="text-sm text-gray-500">Economic (base → adjusted)</div>
+                <div className="text-lg font-semibold">
+                  {fmt2(baseE)} → {fmt2(adjE)}
                 </div>
               </div>
-            </>
+              <div>
+                <div className="text-sm text-gray-500">Social (base → adjusted)</div>
+                <div className="text-lg font-semibold">
+                  {fmt2(baseS)} → {fmt2(adjS)}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-center text-gray-600">No quiz result yet. Please take the quiz.</p>
           )}
         </div>
       ) : (
         <div className="bg-white p-6 rounded shadow">
-          <h2 className="text-xl font-semibold mb-4">
-            {(profile?.displayName || profile?.username || "Your").split(" ")[0]}&apos;s answers
-          </h2>
+          <h2 className="text-xl font-semibold mb-4">{firstName}&apos;s answers</h2>
 
           {answersError && (
             <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>
           )}
 
-          {/* Compass */}
+          {/* Compass Answers */}
           <div className="mb-6">
             <h3 className="font-semibold mb-2">Political Compass</h3>
             {!result ? (
@@ -380,9 +353,9 @@ function ProfileInner() {
                 {hotResponses.map((r) => {
                   const t = r.topic || {};
                   const v = Number.isFinite(Number(r.value)) ? Number(r.value) : 3;
-                  const label = (t.type || "scale") === "yesno" ? (v >= 3 ? "Yes" : "No") : (
-                    {1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)
-                  );
+                  const label = (t.type || "scale") === "yesno"
+                    ? (v >= 3 ? "Yes" : "No")
+                    : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v));
                   return (
                     <div key={r.id} className="border rounded p-3">
                       <div className="text-sm text-gray-500 mb-1">
@@ -409,11 +382,7 @@ function ProfileInner() {
       )}
 
       {/* Followers Modal */}
-      <Modal
-        title="Followers"
-        isOpen={followersOpen}
-        onClose={() => setFollowersOpen(false)}
-      >
+      <Modal title="Followers" isOpen={followersOpen} onClose={() => setFollowersOpen(false)}>
         {followersList.length === 0 ? (
           <p className="text-gray-600">No followers yet.</p>
         ) : (
@@ -424,14 +393,7 @@ function ProfileInner() {
                   <div className="font-medium">{p.displayName || p.username || "User"}</div>
                   {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
                 </div>
-                {p.username && (
-                  <Link
-                    href={`/u/${p.username}`}
-                    className="px-3 py-1.5 rounded border hover:bg-gray-50"
-                  >
-                    View
-                  </Link>
-                )}
+                {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
               </li>
             ))}
           </ul>
@@ -439,11 +401,7 @@ function ProfileInner() {
       </Modal>
 
       {/* Following Modal */}
-      <Modal
-        title="Following"
-        isOpen={followingOpen}
-        onClose={() => setFollowingOpen(false)}
-      >
+      <Modal title="Following" isOpen={followingOpen} onClose={() => setFollowingOpen(false)}>
         {followingList.length === 0 ? (
           <p className="text-gray-600">Not following anyone yet.</p>
         ) : (
@@ -454,14 +412,7 @@ function ProfileInner() {
                   <div className="font-medium">{p.displayName || p.username || "User"}</div>
                   {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
                 </div>
-                {p.username && (
-                  <Link
-                    href={`/u/${p.username}`}
-                    className="px-3 py-1.5 rounded border hover:bg-gray-50"
-                  >
-                    View
-                  </Link>
-                )}
+                {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
               </li>
             ))}
           </ul>
