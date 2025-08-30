@@ -1,0 +1,230 @@
+// pages/settings.js
+import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import { auth, db } from "../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
+
+function SettingsInner() {
+  const router = useRouter();
+
+  const [user, setUser] = useState(undefined); // undefined=loading, null=not logged in
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({
+    displayName: "",
+    username: "",
+    country: "",
+    city: "",
+    age: "",
+    ethnicity: "",
+    gender: "",
+  });
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (user === null) router.replace("/login");
+  }, [user, router]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!user) return;
+      setLoading(true);
+      setError("");
+      try {
+        const snap = await getDoc(doc(db, "profiles", user.uid));
+        const data = snap.exists() ? snap.data() : {};
+        setForm({
+          displayName: data.displayName || "",
+          username: data.username || "",
+          country: data.country || "",
+          city: data.city || "",
+          age: data.age || "",
+          ethnicity: data.ethnicity || "",
+          gender: data.gender || "",
+        });
+      } catch (e) {
+        setError(e?.code ? `Error: ${e.code}` : "Failed to load settings.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (user) load();
+  }, [user]);
+
+  const handleChange = (e) => {
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    setError("");
+
+    try {
+      // Unique username check
+      if (form.username) {
+        const qRef = query(
+          collection(db, "profiles"),
+          where("username", "==", form.username)
+        );
+        const qs = await getDocs(qRef);
+        const taken = qs.docs.some((d) => d.id !== user.uid);
+        if (taken) throw new Error("Username already taken. Please choose another.");
+      }
+
+      await setDoc(
+        doc(db, "profiles", user.uid),
+        { ...form, uid: user.uid, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+
+      alert("Settings saved!");
+    } catch (err) {
+      setError(err.message || "Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (user === undefined || loading) {
+    return <p className="text-center mt-10">Loading settings…</p>;
+  }
+  if (user === null) return null;
+
+  const publicUrl =
+    form.username ? `${typeof window !== "undefined" ? window.location.origin : ""}/u/${form.username}` : "";
+
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Settings</h1>
+
+      <form onSubmit={handleSave} className="space-y-4 bg-white p-6 rounded shadow">
+        <div>
+          <label className="block font-semibold mb-1">Display Name</label>
+          <input
+            className="w-full border p-2 rounded"
+            name="displayName"
+            value={form.displayName}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div>
+          <label className="block font-semibold mb-1">Username (unique)</label>
+          <input
+            className="w-full border p-2 rounded"
+            name="username"
+            value={form.username}
+            onChange={handleChange}
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block font-semibold mb-1">Country</label>
+            <input
+              className="w-full border p-2 rounded"
+              name="country"
+              value={form.country}
+              onChange={handleChange}
+            />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">City</label>
+            <input
+              className="w-full border p-2 rounded"
+              name="city"
+              value={form.city}
+              onChange={handleChange}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block font-semibold mb-1">Age</label>
+          <input
+            type="number"
+            className="w-full border p-2 rounded"
+            name="age"
+            value={form.age}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div>
+          <label className="block font-semibold mb-1">Ethnicity (optional)</label>
+          <input
+            className="w-full border p-2 rounded"
+            name="ethnicity"
+            value={form.ethnicity}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div>
+          <label className="block font-semibold mb-1">Gender</label>
+          <select
+            className="w-full border p-2 rounded"
+            name="gender"
+            value={form.gender}
+            onChange={handleChange}
+          >
+            <option value="">Select…</option>
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
+            <option>Prefer not to say</option>
+          </select>
+        </div>
+
+        {error && <p className="text-red-600">{error}</p>}
+
+        <button
+          disabled={saving}
+          className="px-6 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save Settings"}
+        </button>
+      </form>
+
+      {/* Public link */}
+      <div className="mt-6 bg-gray-50 p-4 rounded border">
+        <h3 className="font-semibold mb-2">Public profile link</h3>
+        {form.username ? (
+          <div className="flex items-center gap-2">
+            <input readOnly value={publicUrl} className="flex-1 border p-2 rounded bg-white" />
+            <button
+              className="px-3 py-2 bg-indigo-600 text-white rounded"
+              onClick={() => publicUrl && navigator.clipboard?.writeText(publicUrl)}
+            >
+              Copy
+            </button>
+          </div>
+        ) : (
+          <p className="text-gray-600">Set a username to get your shareable link.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default dynamic(() => Promise.resolve(SettingsInner), { ssr: false });

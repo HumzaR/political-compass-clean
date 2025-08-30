@@ -5,22 +5,21 @@ import { useRouter } from "next/router";
 export default function SidebarLayout({ children }) {
   const router = useRouter();
 
-  const NavLink = ({ href, label }) => {
-    const active = router.pathname === href;
-    return (
-      <Link
-        href={href}
-        className={[
-          "flex items-center gap-3 px-3 py-2 rounded-lg transition",
-          active
-            ? "bg-indigo-50 text-indigo-700 font-semibold"
-            : "text-gray-700 hover:bg-gray-100",
-        ].join(" ")}
-      >
-        <span>{label}</span>
-      </Link>
-    );
-  };
+  const isActive = (href) => router.pathname === href;
+
+  const NavLink = ({ href, label }) => (
+    <Link
+      href={href}
+      className={[
+        "flex items-center gap-3 px-3 py-2 rounded-lg transition",
+        isActive(href)
+          ? "bg-indigo-50 text-indigo-700 font-semibold"
+          : "text-gray-700 hover:bg-gray-100",
+      ].join(" ")}
+    >
+      <span>{label}</span>
+    </Link>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 md:pl-64">
@@ -39,16 +38,16 @@ export default function SidebarLayout({ children }) {
           <nav className="flex flex-col gap-1">
             <NavLink href="/profile" label="My Profile" />
             <NavLink href="/hot-topics" label="Hot Topics" />
+            <div className="h-px my-2 bg-gray-200" />
+            <NavLink href="/settings" label="Settings" />
           </nav>
 
           <div className="mt-auto pt-4 text-xs text-gray-400">v0.1 • MVP</div>
         </div>
       </aside>
 
-      {/* Main content area */}
-      <main className="min-h-screen">
-        {children}
-      </main>
+      {/* Main content */}
+      <main className="min-h-screen">{children}</main>
     </div>
   );
 }
