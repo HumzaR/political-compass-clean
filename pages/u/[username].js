@@ -1,7 +1,7 @@
 // pages/u/[username].js
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { auth, db } from "../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -14,9 +14,11 @@ function PublicProfileInner() {
   const router = useRouter();
   const { username } = router.query;
 
+  // auth viewer
   const [viewer, setViewer] = useState(undefined);
   useEffect(() => onAuthStateChanged(auth, (u) => setViewer(u || null)), []);
 
+  // page state
   const [activeTab, setActiveTab] = useState("profile");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -25,16 +27,24 @@ function PublicProfileInner() {
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
 
+  // follow state
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
 
+  // counts
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+
+  // modals + lists with loaders
   const [followersOpen, setFollowersOpen] = useState(false);
-  const [followingOpen, setFollowingOpen] = useState(false);
+  const [followersLoading, setFollowersLoading] = useState(false);
   const [followersList, setFollowersList] = useState([]);
+
+  const [followingOpen, setFollowingOpen] = useState(false);
+  const [followingLoading, setFollowingLoading] = useState(false);
   const [followingList, setFollowingList] = useState([]);
 
+  // load profile by username + result + counts
   useEffect(() => {
     const load = async () => {
       if (!username) return;
@@ -50,8 +60,8 @@ function PublicProfileInner() {
         setProfile(prof);
 
         if (prof.lastResultId) {
-          const resSnap = await getDoc(doc(db, "results", prof.lastResultId));
-          setResult(resSnap.exists() ? resSnap.data() : null);
+          const rSnap = await getDoc(doc(db, "results", prof.lastResultId));
+          setResult(rSnap.exists() ? rSnap.data() : null);
         } else {
           setResult(null);
         }
@@ -61,7 +71,7 @@ function PublicProfileInner() {
         const followingQ = query(collection(db, "follows"), where("followerUid", "==", prof.id));
         setFollowingCount((await getDocs(followingQ)).size);
       } catch (e) {
-        console.error(e);
+        console.error("Public profile load error:", e);
         setError(e?.code ? `Error loading profile: ${e.code}` : "Failed to load profile.");
       } finally {
         setLoading(false);
@@ -70,6 +80,7 @@ function PublicProfileInner() {
     load();
   }, [username]);
 
+  // follow state
   useEffect(() => {
     const check = async () => {
       if (!viewer || !profile) return;
@@ -83,6 +94,7 @@ function PublicProfileInner() {
     check();
   }, [viewer, profile]);
 
+  // toggle follow
   const toggleFollow = async () => {
     if (!viewer) { router.push("/login"); return; }
     if (!profile || viewer.uid === profile.id) return;
@@ -107,7 +119,59 @@ function PublicProfileInner() {
     }
   };
 
-  // Helpers
+  // open followers modal, fetch now
+  const openFollowers = async () => {
+    if (!profile) return;
+    setFollowersOpen(true);
+    setFollowersLoading(true);
+    setFollowersList([]);
+    try {
+      const followersQ = query(collection(db, "follows"), where("followeeUid", "==", profile.id));
+      const snap = await getDocs(followersQ);
+      const uids = snap.docs.map((d) => d.data()?.followerUid).filter(Boolean);
+      const profs = [];
+      for (const uid of uids) {
+        const ps = await getDoc(doc(db, "profiles", uid));
+        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
+      }
+      profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
+      setFollowersList(profs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFollowersLoading(false);
+    }
+  };
+
+  // open following modal, fetch now
+  const openFollowing = async () => {
+    if (!profile) return;
+    setFollowingOpen(true);
+    setFollowingLoading(true);
+    setFollowingList([]);
+    try {
+      const followingQ = query(collection(db, "follows"), where("followerUid", "==", profile.id));
+      const snap = await getDocs(followingQ);
+      const uids = snap.docs.map((d) => d.data()?.followeeUid).filter(Boolean);
+      const profs = [];
+      for (const uid of uids) {
+        const ps = await getDoc(doc(db, "profiles", uid));
+        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
+      }
+      profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
+      setFollowingList(profs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFollowingLoading(false);
+    }
+  };
+
+  // close handlers reset lists
+  const closeFollowers = () => { setFollowersOpen(false); setFollowersList([]); };
+  const closeFollowing = () => { setFollowingOpen(false); setFollowingList([]); };
+
+  // helpers
   const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "0.00");
   const firstName = (profile?.displayName || profile?.username || "").trim().split(" ")[0] || (profile ? "User" : "");
   const likertLabel = (n) => ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[Number(n)] || String(n ?? ""));
@@ -154,12 +218,12 @@ function PublicProfileInner() {
         )}
       </div>
 
-      {/* Counts */}
+      {/* counts */}
       <div className="mt-3 flex gap-3">
-        <button className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50" onClick={() => setFollowersOpen(true)} title="View followers">
+        <button className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50" onClick={openFollowers} title="View followers">
           <span className="font-semibold">{followersCount}</span> Followers
         </button>
-        <button className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50" onClick={() => setFollowingOpen(true)} title="View following">
+        <button className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50" onClick={openFollowing} title="View following">
           <span className="font-semibold">{followingCount}</span> Following
         </button>
       </div>
@@ -168,54 +232,33 @@ function PublicProfileInner() {
 
       {/* Tabs */}
       <div className="flex justify-center gap-2 mb-6 mt-6">
-        <button onClick={() => setActiveTab("profile")} className={["px-4 py-2 rounded", activeTab === "profile" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>
-          Profile
-        </button>
-        <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>
-          {firstName}&apos;s answers
-        </button>
+        <button onClick={() => setActiveTab("profile")} className={["px-4 py-2 rounded", activeTab === "profile" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Profile</button>
+        <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>{firstName}&apos;s answers</button>
       </div>
 
       {activeTab === "profile" ? (
         <div className="bg-white border rounded-xl p-6 shadow-sm">
           <h2 className="text-xl font-semibold mb-3">Latest Result</h2>
           <CompassCanvas econ={econ} soc={soc} />
-          {!hasResult ? (
-            <p className="mt-3 text-center text-gray-600">No quiz result yet.</p>
-          ) : (
+          {!hasResult ? <p className="mt-3 text-center text-gray-600">No quiz result yet.</p> : (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-              <div>
-                <div className="text-sm text-gray-500">Economic (base → adjusted)</div>
-                <div className="text-lg font-semibold">{fmt2(baseE)} → {fmt2(baseE + (Number(profile?.hotEconDelta || 0)))}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Social (base → adjusted)</div>
-                <div className="text-lg font-semibold">{fmt2(baseS)} → {fmt2(baseS + (Number(profile?.hotSocDelta || 0)))}</div>
-              </div>
+              <div><div className="text-sm text-gray-500">Economic (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseE)} → {fmt2(baseE + Number(profile?.hotEconDelta || 0))}</div></div>
+              <div><div className="text-sm text-gray-500">Social (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseS)} → {fmt2(baseS + Number(profile?.hotSocDelta || 0))}</div></div>
             </div>
           )}
         </div>
       ) : (
         <div className="bg-white border rounded-xl p-6 shadow-sm">
           <h2 className="text-xl font-semibold mb-3">{firstName}&apos;s answers</h2>
-
           <div className="mb-6">
             <h3 className="font-semibold mb-2">Political Compass</h3>
-            {!hasResult ? (
-              <p className="text-gray-600">No compass answers yet.</p>
-            ) : (
+            {!hasResult ? <p className="text-gray-600">No compass answers yet.</p> : (
               <div className="space-y-3">
                 {compassAnswers.map((a) => (
                   <div key={a.id} className="border rounded p-3">
-                    <div className="text-sm text-gray-500 mb-1">
-                      <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">{a.source}</span>
-                      Axis: {a.axis}
-                    </div>
+                    <div className="text-sm text-gray-500 mb-1"><span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">{a.source}</span>Axis: {a.axis}</div>
                     <div className="font-medium">{a.text}</div>
-                    <div className="mt-1 text-sm">
-                      Answer: <span className="font-semibold">{a.label}</span>{" "}
-                      <span className="text-gray-500">({a.value})</span>
-                    </div>
+                    <div className="mt-1 text-sm">Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></div>
                   </div>
                 ))}
               </div>
@@ -224,8 +267,43 @@ function PublicProfileInner() {
         </div>
       )}
 
-      {/* Followers & Following modals — keep your existing implementations here */}
-      {/* ... */}
+      {/* Followers Modal */}
+      <Modal title="Followers" isOpen={followersOpen} onClose={closeFollowers}>
+        {followersLoading ? <p>Loading…</p> :
+          followersList.length === 0 ? <p className="text-gray-600">No followers yet.</p> : (
+            <ul className="divide-y">
+              {followersList.map((p) => (
+                <li key={p.id} className="py-2 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{p.displayName || p.username || "User"}</div>
+                    {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
+                  </div>
+                  {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </Modal>
+
+      {/* Following Modal */}
+      <Modal title="Following" isOpen={followingOpen} onClose={closeFollowing}>
+        {followingLoading ? <p>Loading…</p> :
+          followingList.length === 0 ? <p className="text-gray-600">Not following anyone yet.</p> : (
+            <ul className="divide-y">
+              {followingList.map((p) => (
+                <li key={p.id} className="py-2 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{p.displayName || p.username || "User"}</div>
+                    {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
+                  </div>
+                  {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </Modal>
     </div>
   );
 }
