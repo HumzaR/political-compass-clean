@@ -1,88 +1,68 @@
 // pages/quiz.js
-import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import questions from "../data/questions";
 
-import { auth } from "../lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
-
-function QuizInner() {
+export default function Quiz() {
   const router = useRouter();
-  const [user, setUser] = useState(undefined); // undefined = loading, null = not logged in
-  const [answers, setAnswers] = useState({}); // { [id]: 1..5 }
+
+  // Answer map: { [questionId]: 1..5 }
+  const [answers, setAnswers] = useState({});
   const [current, setCurrent] = useState(0);
+  const [phase, setPhase] = useState("core"); // 'core' | 'prompt-advanced' | 'advanced'
+  // core = first 20; advanced = next 20
 
-  // Hooks must always run in the same order — keep useEffects here (above any early returns)
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
-    return () => unsub();
-  }, []);
+  const totalCore = 20;
+  const totalAdvanced = questions.length - totalCore; // 20
+  const totalThisRun = phase === "advanced" ? questions.length : totalCore;
 
-  useEffect(() => {
-    if (user === null) router.replace("/login");
-  }, [user, router]);
+  const q = questions[current];
+  const hasAnswer = q && answers[q.id] !== undefined;
 
-  // Data guards (no early return yet)
-  const total = Array.isArray(questions) ? questions.length : 0;
-  const hasQuestions = total > 0;
-  const safeIndex =
-    Number.isFinite(current) && current >= 0 && current < total ? current : 0;
-  const q = hasQuestions ? questions[safeIndex] : null;
+  const answeredCount = useMemo(() => {
+    // Count only from the set we're currently collecting
+    const ids = (phase === "advanced" ? questions : questions.slice(0, totalCore)).map((qq) => qq.id);
+    return ids.filter((id) => answers[id] !== undefined).length;
+  }, [answers, phase]);
 
-  // These hooks must be called on every render (before any return branches)
-  const answeredCount = useMemo(() => Object.keys(answers).length, [answers]);
-  const progressPercent = Math.round(total > 0 ? (answeredCount / total) * 100 : 0);
-
-  // After all hooks above, it's safe to return based on state
-  if (user === undefined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Checking your session…</p>
-      </div>
-    );
-  }
-  if (user === null) {
-    return null; // brief flash before redirect
-  }
-  if (!hasQuestions || !q || !q.id || !q.text) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-center">
-        <div>
-          <h1 className="text-2xl font-bold mb-2">Quiz unavailable</h1>
-          <p className="text-gray-600">
-            No questions found. Please ensure <code>/data/questions.js</code> exports a non-empty array.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const progressPercent = Math.round((answeredCount / totalThisRun) * 100);
 
   const selectAnswer = (value) => {
-    const v = Number(value);
-    if (v >= 1 && v <= 5) {
-      setAnswers((prev) => ({ ...prev, [q.id]: v }));
-    }
+    if (!q) return;
+    setAnswers((prev) => ({ ...prev, [q.id]: value }));
   };
 
   const goNext = () => {
-    if (safeIndex < total - 1) {
+    if (!q) return;
+
+    const lastIndexThisPhase = (phase === "advanced" ? questions.length : totalCore) - 1;
+
+    if (current < lastIndexThisPhase) {
       setCurrent((c) => c + 1);
     } else {
-      const answerArray = questions.map((qq) => {
-        const v = answers[qq.id];
-        return Number.isFinite(v) ? v : 3; // neutral default
-      });
-      router.push(`/results?answers=${answerArray.join(",")}`);
+      // Finished phase
+      if (phase === "core") {
+        // Ask to continue into advanced?
+        setPhase("prompt-advanced");
+      } else {
+        // Submit ALL answers (core+advanced)
+        const answerArray = questions.map((qq) => answers[qq.id] ?? 3);
+        router.push(`/results?answers=${answerArray.join(",")}`);
+      }
     }
   };
 
   const goBack = () => {
-    if (safeIndex > 0) setCurrent((c) => c - 1);
+    if (phase === "prompt-advanced") {
+      // If they go back from the prompt, return to last core question
+      setPhase("core");
+      setCurrent(totalCore - 1);
+      return;
+    }
+    if (current > 0) setCurrent((c) => c - 1);
   };
 
-  const hasAnswer = Number.isFinite(answers[q.id]);
-
+  // UI components
   const ScaleButtons = () => {
     const labels = {
       1: "Strongly Disagree",
@@ -107,9 +87,7 @@ function QuizInner() {
               ].join(" ")}
             >
               <div className="font-semibold">{n}</div>
-              <div className="text-xs sm:text-[0.8rem] opacity-80">
-                {labels[n]}
-              </div>
+              <div className="text-xs sm:text-[0.8rem] opacity-80">{labels[n]}</div>
             </button>
           );
         })}
@@ -145,16 +123,64 @@ function QuizInner() {
     );
   };
 
+  // Prompt screen between phases
+  if (phase === "prompt-advanced") {
+    const coreAnswered = questions.slice(0, totalCore).map((qq) => answers[qq.id] ?? 3);
+    const onFinishCore = () => {
+      router.push(`/results?answers=${coreAnswered.join(",")}`);
+    };
+    const onStartAdvanced = () => {
+      setPhase("advanced");
+      setCurrent(totalCore); // start at Q21
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center">
+        <div className="max-w-2xl mx-auto px-4 py-10 bg-white shadow-lg rounded-xl">
+          <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">Go deeper?</h1>
+          <p className="mt-2 text-gray-700">
+            You’ve completed the <strong>20 core questions</strong> for a broad placement.
+            Would you like to answer an additional <strong>20 advanced questions</strong> for
+            a more nuanced profile (global vs national, progressive vs conservative, and finer-grain economics/social)?
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={onStartAdvanced}
+              className="px-6 py-3 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
+            >
+              Yes, continue (20 more)
+            </button>
+            <button
+              onClick={onFinishCore}
+              className="px-6 py-3 rounded-lg font-semibold bg-gray-200 text-gray-900 hover:bg-gray-300"
+            >
+              No thanks — see results
+            </button>
+          </div>
+
+          <button
+            onClick={goBack}
+            className="mt-6 text-sm text-gray-600 underline"
+          >
+            ← Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal question screen
+  const total = totalThisRun;
+  const indexWithinPhase = current < totalCore ? current : current - totalCore;
+  const whichSet =
+    phase === "advanced" ? `Advanced (${indexWithinPhase + 1} of ${totalAdvanced})` : `Core (${current + 1} of ${totalCore})`;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Top bar */}
       <div className="max-w-3xl mx-auto px-4 pt-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">
-          Political Compass Quiz
-        </h1>
-        <p className="text-gray-600 mt-1">
-          Question {safeIndex + 1} of {total}
-        </p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">Political Spectrum Quiz</h1>
+        <p className="text-gray-600 mt-1">{whichSet}</p>
 
         {/* Progress bar */}
         <div className="mt-4 h-3 w-full bg-gray-200 rounded-full overflow-hidden">
@@ -172,22 +198,20 @@ function QuizInner() {
       {/* Card */}
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8">
-          <p className="text-lg sm:text-xl font-medium text-gray-900 text-center">
-            {q.text}
-          </p>
+          <p className="text-lg sm:text-xl font-medium text-gray-900 text-center">{q?.text}</p>
 
           <div className="mt-6">
-            {q.type === "scale" ? <ScaleButtons /> : <YesNoButtons />}
+            {q?.type === "yesno" ? <YesNoButtons /> : <ScaleButtons />}
           </div>
 
           {/* Nav buttons */}
           <div className="mt-8 flex items-center justify-between">
             <button
               onClick={goBack}
-              disabled={safeIndex === 0}
+              disabled={phase !== "advanced" ? current === 0 : current === totalCore}
               className={[
                 "px-5 py-3 rounded-lg border font-semibold transition",
-                safeIndex === 0
+                (phase !== "advanced" ? current === 0 : current === totalCore)
                   ? "text-gray-400 border-gray-200 cursor-not-allowed"
                   : "text-gray-700 border-gray-300 hover:border-gray-400",
               ].join(" ")}
@@ -205,7 +229,9 @@ function QuizInner() {
                   : "bg-gray-300 text-gray-600 cursor-not-allowed",
               ].join(" ")}
             >
-              {safeIndex < total - 1 ? "Next →" : "Submit Results"}
+              {phase === "advanced"
+                ? (current < questions.length - 1 ? "Next →" : "See Results")
+                : (current < totalCore - 1 ? "Next →" : "Continue")}
             </button>
           </div>
         </div>
@@ -213,6 +239,3 @@ function QuizInner() {
     </div>
   );
 }
-
-// Client-only page to avoid hydration issues with auth/router
-export default dynamic(() => Promise.resolve(QuizInner), { ssr: false });
