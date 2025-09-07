@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
  * Values can be any real numbers (negative or positive). We auto-scale
  * using the max absolute value among inputs (min baseline 5).
  *
- * Conventions (matching your scoring):
+ * Conventions:
  * - econ:   − = Left,        + = Right
  * - soc:    − = Libertarian, + = Authoritarian
  * - glob:   − = Globalist,   + = Nationalist
@@ -18,7 +18,7 @@ export default function QuadRadar({
   glob = 0,
   prog = 0,
   className = "",
-  size = 420, // CSS pixel box (canvas scales internally for Hi-DPI)
+  size = 420,
 }) {
   const canvasRef = useRef(null);
 
@@ -26,8 +26,10 @@ export default function QuadRadar({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const dpr = Math.max(1, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
-    const W = size, H = size;
+    const dpr =
+      Math.max(1, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+    const W = size,
+      H = size;
 
     // back buffer
     canvas.width = W * dpr;
@@ -44,25 +46,37 @@ export default function QuadRadar({
 
     const cx = W / 2;
     const cy = H / 2;
-    const radius = Math.min(W, H) * 0.38; // padding around
+    const radius = Math.min(W, H) * 0.38; // padding
 
     // Determine scale: max abs among inputs (fallback to 5)
-    const maxAbs = Math.max(5, ...[econ, soc, glob, prog].map((v) => Math.abs(Number(v) || 0)));
+    const maxAbs = Math.max(
+      5,
+      ...[econ, soc, glob, prog].map((v) => Math.abs(Number(v) || 0))
+    );
     const scale = maxAbs;
 
     // Helpers
     const toPoint = (angleRad, value) => {
-      // map value ∈ [-scale, +scale] → [-radius, +radius]
-      const r = (Math.max(-scale, Math.min(scale, value)) / scale) * radius;
+      const r =
+        (Math.max(-scale, Math.min(scale, value)) / scale) * radius;
       return [cx + Math.cos(angleRad) * r, cy + Math.sin(angleRad) * r];
     };
+    const placeText = (angle, r, text) => {
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      ctx.textAlign = cos > 0.2 ? "left" : cos < -0.2 ? "right" : "center";
+      ctx.textBaseline = sin > 0.2 ? "top" : sin < -0.2 ? "bottom" : "middle";
+      ctx.fillText(text, x, y);
+    };
 
-    // Axes (in radians, clockwise, starting at 0° = to the right)
+    // Axes (radians, clockwise, 0 at +X)
     const axes = [
-      { key: "econ",  labelNeg: "Left",        labelPos: "Right",        angle: 0 },                // 0° (east)
-      { key: "soc",   labelNeg: "Libertarian", labelPos: "Authoritarian", angle: Math.PI / 2 },     // 90° (south)
-      { key: "glob",  labelNeg: "Globalist",   labelPos: "Nationalist",   angle: Math.PI },         // 180° (west)
-      { key: "prog",  labelNeg: "Progressive", labelPos: "Conservative",  angle: (3 * Math.PI) / 2 } // 270° (north)
+      { key: "econ",  labelNeg: "Left",        labelPos: "Right",        angle: 0 },                // East
+      { key: "soc",   labelNeg: "Libertarian", labelPos: "Authoritarian", angle: Math.PI / 2 },     // South
+      { key: "glob",  labelNeg: "Globalist",   labelPos: "Nationalist",   angle: Math.PI },         // West
+      { key: "prog",  labelNeg: "Progressive", labelPos: "Conservative",  angle: (3 * Math.PI) / 2} // North
     ];
 
     // Grid rings
@@ -80,32 +94,31 @@ export default function QuadRadar({
     ctx.strokeStyle = "#9ca3af"; // gray-400
     ctx.lineWidth = 1;
     axes.forEach((a) => {
-      const [x, y] = [cx + Math.cos(a.angle) * radius, cy + Math.sin(a.angle) * radius];
+      const x = cx + Math.cos(a.angle) * radius;
+      const y = cy + Math.sin(a.angle) * radius;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(x, y);
       ctx.stroke();
     });
 
-    // Axis labels
+    // Axis labels (avoid overlap: positive outside, negative inside on opposite)
     ctx.fillStyle = "#374151"; // gray-700
     ctx.font = "12px Arial";
-    axes.forEach((a) => {
-      // Positive end label
-      const [xPos, yPos] = [cx + Math.cos(a.angle) * (radius + 12), cy + Math.sin(a.angle) * (radius + 12)];
-      ctx.textAlign = Math.cos(a.angle) > 0.2 ? "left" : Math.cos(a.angle) < -0.2 ? "right" : "center";
-      ctx.textBaseline = Math.sin(a.angle) > 0.2 ? "top" : Math.sin(a.angle) < -0.2 ? "bottom" : "middle";
-      ctx.fillText(a.labelPos, xPos, yPos);
 
-      // Negative end label (opposite side)
+    const outerLabelR = radius + 14;   // positive end
+    const innerLabelR = radius - 22;   // negative end (pulled inward to avoid collision)
+
+    axes.forEach((a) => {
+      // Positive label at axis tip (outside)
+      placeText(a.angle, outerLabelR, a.labelPos);
+
+      // Negative label at the opposite end but INSIDE the rim
       const opp = a.angle + Math.PI;
-      const [xNeg, yNeg] = [cx + Math.cos(opp) * (radius + 12), cy + Math.sin(opp) * (radius + 12)];
-      ctx.textAlign = Math.cos(opp) > 0.2 ? "left" : Math.cos(opp) < -0.2 ? "right" : "center";
-      ctx.textBaseline = Math.sin(opp) > 0.2 ? "top" : Math.sin(opp) < -0.2 ? "bottom" : "middle";
-      ctx.fillText(a.labelNeg, xNeg, yNeg);
+      placeText(opp, innerLabelR, a.labelNeg);
     });
 
-    // Plot polygon
+    // Data polygon
     const values = { econ, soc, glob, prog };
     const points = axes.map((a) => {
       const v = Number(values[a.key]) || 0;
@@ -114,22 +127,16 @@ export default function QuadRadar({
 
     // Fill
     ctx.beginPath();
-    points.forEach(([x, y], i) => {
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.closePath();
-    ctx.fillStyle = "rgba(99, 102, 241, 0.15)"; // indigo-500 @ ~15%
+    ctx.fillStyle = "rgba(99, 102, 241, 0.15)"; // indigo-500 ~15%
     ctx.fill();
 
     // Stroke
     ctx.strokeStyle = "#6366f1"; // indigo-500
     ctx.lineWidth = 2;
     ctx.beginPath();
-    points.forEach(([x, y], i) => {
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.closePath();
     ctx.stroke();
 
@@ -147,7 +154,6 @@ export default function QuadRadar({
     ctx.fillStyle = "#6b7280"; // gray-500
     ctx.fill();
 
-    // Scale annotation
     ctx.fillStyle = "#6b7280";
     ctx.font = "11px Arial";
     ctx.textAlign = "center";
