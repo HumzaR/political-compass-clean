@@ -8,7 +8,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import questions from "../../data/questions";
 import Modal from "../../components/Modal";
-import CompassCanvas from "../../components/CompassCanvas";
+import QuadRadar from "../../components/QuadRadar";
 
 function PublicProfileInner() {
   const router = useRouter();
@@ -167,7 +167,6 @@ function PublicProfileInner() {
     }
   };
 
-  // close handlers reset lists
   const closeFollowers = () => { setFollowersOpen(false); setFollowersList([]); };
   const closeFollowing = () => { setFollowingOpen(false); setFollowingList([]); };
 
@@ -177,14 +176,26 @@ function PublicProfileInner() {
   const likertLabel = (n) => ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[Number(n)] || String(n ?? ""));
   const yesNoFromValue = (n) => (Number(n) >= 3 ? "Yes" : "No");
 
+  // Scores (include deltas for econ/soc; global/progress are stored on result)
   const baseE = Number(result?.economicScore);
   const baseS = Number(result?.socialScore);
+  const baseG = Number(result?.globalScore);
+  const baseP = Number(result?.progressScore);
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
-  const hasResult = Number.isFinite(baseE) && Number.isFinite(baseS);
-  const econ = hasResult ? baseE + dE : undefined;
-  const soc = hasResult ? baseS + dS : undefined;
 
+  const hasE = Number.isFinite(baseE);
+  const hasS = Number.isFinite(baseS);
+  const hasG = Number.isFinite(baseG);
+  const hasP = Number.isFinite(baseP);
+  const hasAny = hasE || hasS || hasG || hasP;
+
+  const econ = hasE ? baseE + dE : 0;
+  const soc  = hasS ? baseS + dS : 0;
+  const glob = hasG ? baseG : 0;
+  const prog = hasP ? baseP : 0;
+
+  // answers (for the Answers tab)
   const compassAnswers = (() => {
     const ans = (result && result.answers) || {};
     return (Array.isArray(questions) ? questions : []).map((q) => {
@@ -238,12 +249,16 @@ function PublicProfileInner() {
 
       {activeTab === "profile" ? (
         <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-3">Latest Result</h2>
-          <CompassCanvas econ={econ} soc={soc} />
-          {!hasResult ? <p className="mt-3 text-center text-gray-600">No quiz result yet.</p> : (
+          <h2 className="text-xl font-semibold mb-3">Latest Spectrum (All Axes)</h2>
+          <QuadRadar econ={econ} soc={soc} glob={glob} prog={prog} />
+          {!hasAny ? (
+            <p className="mt-3 text-center text-gray-600">No quiz result yet.</p>
+          ) : (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
-              <div><div className="text-sm text-gray-500">Economic (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseE)} → {fmt2(baseE + Number(profile?.hotEconDelta || 0))}</div></div>
-              <div><div className="text-sm text-gray-500">Social (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseS)} → {fmt2(baseS + Number(profile?.hotSocDelta || 0))}</div></div>
+              <div><div className="text-sm text-gray-500">Economic (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseE)} → {fmt2(econ)}</div></div>
+              <div><div className="text-sm text-gray-500">Social (base → adjusted)</div><div className="text-lg font-semibold">{fmt2(baseS)} → {fmt2(soc)}</div></div>
+              <div><div className="text-sm text-gray-500">Global vs National</div><div className="text-lg font-semibold">{fmt2(glob)}</div></div>
+              <div><div className="text-sm text-gray-500">Progressive vs Conservative</div><div className="text-lg font-semibold">{fmt2(prog)}</div></div>
             </div>
           )}
         </div>
@@ -252,11 +267,14 @@ function PublicProfileInner() {
           <h2 className="text-xl font-semibold mb-3">{firstName}&apos;s answers</h2>
           <div className="mb-6">
             <h3 className="font-semibold mb-2">Political Compass</h3>
-            {!hasResult ? <p className="text-gray-600">No compass answers yet.</p> : (
+            {!hasAny ? <p className="text-gray-600">No compass answers yet.</p> : (
               <div className="space-y-3">
                 {compassAnswers.map((a) => (
                   <div key={a.id} className="border rounded p-3">
-                    <div className="text-sm text-gray-500 mb-1"><span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">{a.source}</span>Axis: {a.axis}</div>
+                    <div className="text-sm text-gray-500 mb-1">
+                      <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">{a.source}</span>
+                      Axis: {a.axis}
+                    </div>
                     <div className="font-medium">{a.text}</div>
                     <div className="mt-1 text-sm">Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></div>
                   </div>
