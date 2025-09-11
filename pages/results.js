@@ -16,7 +16,7 @@ export default function Results() {
     return () => unsub();
   }, []);
 
-  const [scores, setScores] = useState(null); // { econ, soc, glob, prog, answers, answeredCount, totalAsked }
+  const [scores, setScores] = useState(null); // { econ, soc, glob, prog, answers, answeredCount, totalAsked, hasAdvanced }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -26,13 +26,11 @@ export default function Results() {
     const answersStr = String(router.query.answers || "");
     const answerArray = answersStr ? answersStr.split(",").map(Number) : [];
 
-    // Build answers map ONLY for indices that exist in answerArray
-    // i.e., if user did only the first 20, we save only those 20 (no undefineds).
+    // Build answers map ONLY for indices that exist in answerArray (no undefineds)
     const userAnswers = {};
     questions.forEach((q, i) => {
       const v = answerArray[i];
       if (Number.isFinite(v)) userAnswers[q.id] = v;
-      // else: skip (do not set undefined/null)
     });
 
     // Compute per-axis scores from provided answers only
@@ -50,6 +48,10 @@ export default function Results() {
       else if (q.axis === "progress") prog += scaled;
     });
 
+    // Determine if any advanced answers (IDs 21..40) are present
+    const hasAdvanced = Array.from({ length: 20 }, (_, k) => 21 + k)
+      .some((id) => Number.isFinite(userAnswers[id]));
+
     setScores({
       econ,
       soc,
@@ -58,6 +60,7 @@ export default function Results() {
       answers: userAnswers,
       answeredCount: Object.keys(userAnswers).length,
       totalAsked: answerArray.length, // how many the quiz passed in this run
+      hasAdvanced,
     });
   }, [router.isReady, router.query]);
 
@@ -81,6 +84,7 @@ export default function Results() {
           meta: {
             answeredCount: scores.answeredCount,
             totalAsked: scores.totalAsked,
+            hasAdvanced: scores.hasAdvanced,
             version: "v2-four-axis",
           },
         });
@@ -110,7 +114,7 @@ export default function Results() {
     );
   }
 
-  const { econ, soc, glob, prog } = scores;
+  const { econ, soc, glob, prog, hasAdvanced } = scores;
   const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "0.00");
 
   return (
@@ -120,6 +124,7 @@ export default function Results() {
         You answered {scores.answeredCount} of {scores.totalAsked} questions.
       </p>
 
+      {/* Always show the 2D compass first */}
       <div className="bg-white p-6 rounded shadow">
         <h2 className="text-xl font-semibold mb-3">Compass (Economic vs Social)</h2>
         <CompassCanvas econ={econ} soc={soc} />
@@ -135,20 +140,37 @@ export default function Results() {
         </div>
       </div>
 
+      {/* Advanced axes section */}
       <div className="bg-white p-6 rounded shadow mt-6">
         <h2 className="text-lg font-semibold mb-3">Additional Axes</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="border rounded p-4">
-            <div className="text-sm text-gray-500">Global vs National</div>
-            <div className="text-lg font-semibold">{fmt2(glob)}</div>
-            <p className="text-xs text-gray-500 mt-1">(−) globalist / (+) nationalist</p>
+
+        {hasAdvanced ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="border rounded p-4">
+              <div className="text-sm text-gray-500">Global vs National</div>
+              <div className="text-lg font-semibold">{fmt2(glob)}</div>
+              <p className="text-xs text-gray-500 mt-1">(−) globalist / (+) nationalist</p>
+            </div>
+            <div className="border rounded p-4">
+              <div className="text-sm text-gray-500">Progressive vs Conservative</div>
+              <div className="text-lg font-semibold">{fmt2(prog)}</div>
+              <p className="text-xs text-gray-500 mt-1">(−) progressive / (+) conservative</p>
+            </div>
           </div>
-          <div className="border rounded p-4">
-            <div className="text-sm text-gray-500">Progressive vs Conservative</div>
-            <div className="text-lg font-semibold">{fmt2(prog)}</div>
-            <p className="text-xs text-gray-500 mt-1">(−) progressive / (+) conservative</p>
+        ) : (
+          <div className="rounded border border-dashed p-4 bg-gray-50">
+            <p className="text-gray-700">
+              You’ll unlock <strong>Global vs National</strong> and <strong>Progressive vs Conservative</strong> scores by completing the{" "}
+              <strong>advanced 20 questions</strong>.
+            </p>
+            <button
+              onClick={() => router.push("/quiz?start=advanced")}
+              className="mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+            >
+              Continue with the last 20 questions
+            </button>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="mt-6 flex items-center gap-3">
