@@ -1,191 +1,92 @@
 // pages/quiz.js
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/router";
-import questions from "../data/questions";
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import questions from '../data/questions';
 
 export default function Quiz() {
   const router = useRouter();
-
   const [answers, setAnswers] = useState({});
   const [current, setCurrent] = useState(0);
-  const [phase, setPhase] = useState("core"); // 'core' | 'prompt-advanced' | 'advanced'
+  const total = questions.length;
 
-  const totalCore = 20;
-  const totalAdvanced = questions.length - totalCore; // 20
-  const totalThisRun = phase === "advanced" ? questions.length : totalCore;
+  const question = questions[current];
 
-  // NEW: allow jumping straight to advanced via query
   useEffect(() => {
-    if (!router.isReady) return;
-    const jump = String(router.query.start || "").toLowerCase() === "advanced";
-    if (jump) {
-      setPhase("advanced");
-      setCurrent(totalCore); // start at Q21
-    }
-  }, [router.isReady, router.query, totalCore]);
+    // Load any saved answers (optional)
+    try {
+      const saved = localStorage.getItem('pc_answers');
+      if (saved) setAnswers(JSON.parse(saved));
+    } catch {}
+  }, []);
 
-  const q = questions[current];
-  const hasAnswer = q && answers[q.id] !== undefined;
+  useEffect(() => {
+    // Persist answers for results page
+    try {
+      localStorage.setItem('pc_answers', JSON.stringify(answers));
+    } catch {}
+  }, [answers]);
 
-  const answeredCount = useMemo(() => {
-    const ids = (phase === "advanced" ? questions : questions.slice(0, totalCore)).map((qq) => qq.id);
-    return ids.filter((id) => answers[id] !== undefined).length;
-  }, [answers, phase]);
+  const handleAnswer = (value) => {
+    const updated = { ...answers, [question.id]: value };
+    setAnswers(updated);
 
-  const progressPercent = Math.round((answeredCount / totalThisRun) * 100);
-
-  const selectAnswer = (value) => {
-    if (!q) return;
-    setAnswers((prev) => ({ ...prev, [q.id]: value }));
-  };
-
-  const goNext = () => {
-    if (!q) return;
-    const lastIndexThisPhase = (phase === "advanced" ? questions.length : totalCore) - 1;
-
-    if (current < lastIndexThisPhase) {
+    if (current < total - 1) {
       setCurrent((c) => c + 1);
     } else {
-      if (phase === "core") {
-        setPhase("prompt-advanced");
-      } else {
-        const answerArray = questions.map((qq) => answers[qq.id] ?? 3);
-        router.push(`/results?answers=${answerArray.join(",")}`);
-      }
+      // Navigate to results
+      router.push('/results');
     }
   };
 
-  const goBack = () => {
-    if (phase === "prompt-advanced") {
-      setPhase("core");
-      setCurrent(totalCore - 1);
-      return;
-    }
-    if (current > 0) setCurrent((c) => c - 1);
-  };
-
-  const ScaleButtons = () => {
-    const labels = { 1: "Strongly Disagree", 2: "Disagree", 3: "Neutral", 4: "Agree", 5: "Strongly Agree" };
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 w-full">
-        {[1, 2, 3, 4, 5].map((n) => {
-          const selected = answers[q.id] === n;
-          return (
-            <button
-              key={n}
-              onClick={() => selectAnswer(n)}
-              className={[
-                "p-3 rounded-lg border transition text-sm sm:text-base",
-                selected ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400",
-              ].join(" ")}
-            >
-              <div className="font-semibold">{n}</div>
-              <div className="text-xs sm:text-[0.8rem] opacity-80">{labels[n]}</div>
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const YesNoButtons = () => {
-    const opts = [{ label: "Yes", value: 5 }, { label: "No", value: 1 }];
-    return (
-      <div className="flex gap-3 w-full justify-center">
-        {opts.map(({ label, value }) => {
-          const selected = answers[q.id] === value;
-          return (
-            <button
-              key={label}
-              onClick={() => selectAnswer(value)}
-              className={[
-                "px-6 py-3 rounded-lg border transition font-semibold",
-                selected ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-800 border-gray-300 hover:border-indigo-400",
-              ].join(" ")}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
-  if (phase === "prompt-advanced") {
-    const coreAnswered = questions.slice(0, totalCore).map((qq) => answers[qq.id] ?? 3);
-    const onFinishCore = () => router.push(`/results?answers=${coreAnswered.join(",")}`);
-    const onStartAdvanced = () => { setPhase("advanced"); setCurrent(totalCore); };
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center">
-        <div className="max-w-2xl mx-auto px-4 py-10 bg-white shadow-lg rounded-xl">
-          <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">Go deeper?</h1>
-          <p className="mt-2 text-gray-700">
-            You’ve completed the <strong>20 core questions</strong>. Continue with the next <strong>20 advanced</strong> for two extra axes.
-          </p>
-          <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            <button onClick={onStartAdvanced} className="px-6 py-3 rounded-lg font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-              Yes, continue (20 more)
-            </button>
-            <button onClick={onFinishCore} className="px-6 py-3 rounded-lg font-semibold bg-gray-200 text-gray-900 hover:bg-gray-300">
-              No thanks — see results
-            </button>
-          </div>
-          <button onClick={goBack} className="mt-6 text-sm text-gray-600 underline">← Back</button>
-        </div>
-      </div>
-    );
-  }
-
-  const total = totalThisRun;
-  const indexWithinPhase = current < totalCore ? current : current - totalCore;
-  const whichSet = phase === "advanced" ? `Advanced (${indexWithinPhase + 1} of ${totalAdvanced})` : `Core (${current + 1} of ${totalCore})`;
+  const progress = Math.round(((current + 1) / total) * 100);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="max-w-3xl mx-auto px-4 pt-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-indigo-800">Political Spectrum Quiz</h1>
-        <p className="text-gray-600 mt-1">{whichSet}</p>
+    <div className="min-h-screen px-5 py-8 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-3">Quiz</h1>
 
-        <div className="mt-4 h-3 w-full bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-3 bg-indigo-600 transition-all" style={{ width: `${progressPercent}%` }} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} />
+      {/* Progress */}
+      <div className="mb-6">
+        <div className="flex justify-between text-sm mb-1">
+          <span>Question {current + 1} of {total}</span>
+          <span>{progress}%</span>
         </div>
-        <p className="text-sm text-gray-600 mt-1">{progressPercent}% complete</p>
+        <div className="w-full bg-gray-200 h-2 rounded">
+          <div className="h-2 bg-blue-600 rounded" style={{ width: progress + '%' }} />
+        </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <div className="bg-white shadow-lg rounded-xl p-6 sm:p-8">
-          <p className="text-lg sm:text-xl font-medium text-gray-900 text-center">{q?.text}</p>
-          <div className="mt-6">{q?.type === "yesno" ? <YesNoButtons /> : <ScaleButtons />}</div>
+      {/* Question */}
+      <div className="border rounded p-5 bg-white">
+        <p className="text-lg mb-5">{question.text}</p>
 
-          <div className="mt-8 flex items-center justify-between">
+        {/* 5-point Likert (1..5). Adjust labels to your preference */}
+        <div className="grid grid-cols-5 gap-2">
+          {[1, 2, 3, 4, 5].map((v) => (
             <button
-              onClick={goBack}
-              disabled={phase !== "advanced" ? current === 0 : current === totalCore}
-              className={[
-                "px-5 py-3 rounded-lg border font-semibold transition",
-                (phase !== "advanced" ? current === 0 : current === totalCore)
-                  ? "text-gray-400 border-gray-200 cursor-not-allowed"
-                  : "text-gray-700 border-gray-300 hover:border-gray-400",
-              ].join(" ")}
+              key={v}
+              onClick={() => handleAnswer(v)}
+              className={`px-3 py-2 rounded border hover:bg-gray-50 ${
+                answers[question.id] === v ? 'bg-black text-white' : 'bg-white'
+              }`}
             >
-              ← Back
+              {v === 1 ? 'Strongly Disagree' :
+               v === 2 ? 'Disagree' :
+               v === 3 ? 'Neutral' :
+               v === 4 ? 'Agree' : 'Strongly Agree'}
             </button>
-
-            <button
-              onClick={goNext}
-              disabled={!hasAnswer}
-              className={[
-                "px-6 py-3 rounded-lg font-semibold transition",
-                hasAnswer ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-300 text-gray-600 cursor-not-allowed",
-              ].join(" ")}
-            >
-              {phase === "advanced"
-                ? (current < questions.length - 1 ? "Next →" : "See Results")
-                : (current < totalCore - 1 ? "Next →" : "Continue")}
-            </button>
-          </div>
+          ))}
         </div>
+      </div>
+
+      {/* Optional: Back button */}
+      <div className="mt-4">
+        <button
+          className="text-sm underline"
+          onClick={() => setCurrent((c) => Math.max(0, c - 1))}
+          disabled={current === 0}
+        >
+          Back
+        </button>
       </div>
     </div>
   );
