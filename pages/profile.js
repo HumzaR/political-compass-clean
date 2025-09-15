@@ -12,6 +12,35 @@ import questions from "../data/questions";
 import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
+import CompassCanvas from "../components/CompassCanvas";
+
+// Normalize answers from result doc into a map keyed by question id
+function normalizeAnswers(raw) {
+  // Already a plain object? Assume by-id if any key matches a known id.
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const keys = Object.keys(raw);
+    const haveIdKey = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
+    if (haveIdKey) return raw;
+    // Could be an object but using indexes as keys: convert
+    const byId = {};
+    questions.forEach((q, idx) => {
+      const v = raw[idx];
+      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
+    });
+    return byId;
+  }
+  // Array case
+  if (Array.isArray(raw)) {
+    const byId = {};
+    questions.forEach((q, idx) => {
+      const v = raw[idx];
+      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
+    });
+    return byId;
+  }
+  // Fallback
+  return {};
+}
 
 function ProfileInner() {
   const router = useRouter();
@@ -30,6 +59,7 @@ function ProfileInner() {
   const [pageError, setPageError] = useState("");
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
+  const [answersById, setAnswersById] = useState({});
 
   // follows
   const [followersCount, setFollowersCount] = useState(0);
@@ -41,10 +71,9 @@ function ProfileInner() {
   const [followingLoading, setFollowingLoading] = useState(false);
   const [followingList, setFollowingList] = useState([]);
 
-  // answers (hot topics list for answers tab)
+  // answers (hot topics list for answers tab) – unchanged in this fix
   const [loadingAnswers, setLoadingAnswers] = useState(false);
   const [answersError, setAnswersError] = useState("");
-  const [hotResponses, setHotResponses] = useState([]);
 
   // load profile + latest result + counts
   useEffect(() => {
@@ -60,9 +89,17 @@ function ProfileInner() {
 
         if (p.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", p.lastResultId));
-          setResult(rSnap.exists() ? rSnap.data() : null);
+          if (rSnap.exists()) {
+            const r = rSnap.data();
+            setResult(r);
+            setAnswersById(normalizeAnswers(r.answers));
+          } else {
+            setResult(null);
+            setAnswersById({});
+          }
         } else {
           setResult(null);
+          setAnswersById({});
         }
 
         const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
@@ -128,17 +165,27 @@ function ProfileInner() {
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
 
-  const econ = Number.isFinite(Number(result?.economicScore)) ? Number(result.economicScore) + dE : null;
-  const soc  = Number.isFinite(Number(result?.socialScore))   ? Number(result.socialScore)   + dS : null;
-  const glob = Number.isFinite(Number(result?.globalScore))    ? Number(result.globalScore)    : null;
-  const prog = Number.isFinite(Number(result?.progressScore))  ? Number(result.progressScore)  : null;
+  const econBase = Number(result?.economicScore);
+  const socBase  = Number(result?.socialScore);
+  const globBase = Number(result?.globalScore);
+  const progBase = Number(result?.progressScore);
 
-  const hasAny = econ !== null || soc !== null || glob !== null || prog !== null;
-  const hasAdvanced = glob !== null || prog !== null;
+  const hasE = Number.isFinite(econBase);
+  const hasS = Number.isFinite(socBase);
+  const hasG = Number.isFinite(globBase);
+  const hasP = Number.isFinite(progBase);
 
-  // contributions per axis (from latest result answers)
+  const econ = hasE ? econBase + dE : null;
+  const soc  = hasS ? socBase + dS : null;
+  const glob = hasG ? globBase : null;
+  const prog = hasP ? progBase : null;
+
+  const hasAny = hasE || hasS || hasG || hasP;
+  const hasAdvanced = hasG || hasP;
+
+  // contributions per axis (from normalized answers)
   const contributions = useMemo(() => {
-    const ans = (result && result.answers) || {};
+    const ans = answersById || {};
     const make = (axis) =>
       questions
         .filter((q) => q.axis === axis)
@@ -155,7 +202,7 @@ function ProfileInner() {
       global: make("global"),
       progress: make("progress"),
     };
-  }, [result]);
+  }, [answersById]);
 
   const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "—");
 
@@ -167,17 +214,21 @@ function ProfileInner() {
     progress: { bg: "#FFEDD5", bar: "#FED7AA", dot: "#F97316" }, // orange
   };
 
-  // answers list for the Answers tab (political compass)
+  // answers list for the Answers tab (show real values; if missing, mark as "Not answered")
   const compassAnswers = useMemo(() => {
-    const ans = (result && result.answers) || {};
+    const ans = answersById || {};
     return questions.map((q) => {
-      const v = Number.isFinite(Number(ans[q.id])) ? Number(ans[q.id]) : 3;
-      const label = q.type === "yesno"
-        ? (v >= 3 ? "Yes" : "No")
-        : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v));
-      return { id: `compass-${q.id}`, text: q.text, axis: q.axis, value: v, label };
+      const raw = ans[q.id];
+      const has = Number.isFinite(Number(raw));
+      const v = has ? Number(raw) : null;
+      const label = !has
+        ? "Not answered"
+        : (q.type === "yesno"
+            ? (v >= 3 ? "Yes" : "No")
+            : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)));
+      return { id: `compass-${q.id}`, text: q.text, axis: q.axis, value: v, label, has };
     });
-  }, [result]);
+  }, [answersById]);
 
   if (user === undefined || loadingProfile) return <p className="text-center mt-10">Loading your profile…</p>;
   if (user === null) return null;
@@ -224,19 +275,13 @@ function ProfileInner() {
             </div>
           </div>
 
-          {/* Always keep the classic 2D compass for orientation */}
+          {/* Quick compass */}
           <div className="mb-6">
             <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
             {econ === null || soc === null ? (
               <p className="text-gray-600">No quiz result yet. <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.</p>
             ) : (
-              <div className="bg-white border rounded-xl p-4">
-                {/* Reuse your existing canvas component */}
-                <div className="max-w-xl mx-auto">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {/* CompassCanvas is a canvas component; render it directly */}
-                </div>
-              </div>
+              <CompassCanvas econ={econ} soc={soc} />
             )}
           </div>
 
@@ -327,8 +372,11 @@ function ProfileInner() {
                     </div>
                     <div className="font-medium">{a.text}</div>
                     <div className="mt-1 text-sm">
-                      Answer: <span className="font-semibold">{a.label}</span>{" "}
-                      <span className="text-gray-500">({a.value})</span>
+                      {a.has ? (
+                        <>Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></>
+                      ) : (
+                        <span className="text-gray-500 italic">Not answered</span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -336,7 +384,7 @@ function ProfileInner() {
             )}
           </div>
 
-          {/* Hot Topics list (if you already render it here, keep your existing block) */}
+          {/* If you render Hot Topics here, keep your existing section below */}
         </div>
       )}
 

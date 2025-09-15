@@ -22,11 +22,35 @@ import QuadRadar from "../../components/QuadRadar";
 import AxisCard from "../../components/AxisCard";
 import CompassCanvas from "../../components/CompassCanvas";
 
+// Same normalizer as profile
+function normalizeAnswers(raw) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const keys = Object.keys(raw);
+    const haveIdKey = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
+    if (haveIdKey) return raw;
+    const byId = {};
+    questions.forEach((q, idx) => {
+      const v = raw[idx];
+      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
+    });
+    return byId;
+  }
+  if (Array.isArray(raw)) {
+    const byId = {};
+    questions.forEach((q, idx) => {
+      const v = raw[idx];
+      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
+    });
+    return byId;
+  }
+  return {};
+}
+
 function PublicProfileInner() {
   const router = useRouter();
   const { username } = router.query;
 
-  // viewer auth (who is looking)
+  // viewer auth
   const [viewer, setViewer] = useState(undefined);
   useEffect(() => onAuthStateChanged(auth, (u) => setViewer(u || null)), []);
 
@@ -39,8 +63,9 @@ function PublicProfileInner() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
 
-  const [profile, setProfile] = useState(null); // { id, username, displayName, lastResultId, hotEconDelta, hotSocDelta, ... }
-  const [result, setResult] = useState(null);   // latest result doc
+  const [profile, setProfile] = useState(null);
+  const [result, setResult] = useState(null);
+  const [answersById, setAnswersById] = useState({});
 
   // follows state
   const [isFollowing, setIsFollowing] = useState(false);
@@ -71,6 +96,7 @@ function PublicProfileInner() {
           setNotFound(true);
           setProfile(null);
           setResult(null);
+          setAnswersById({});
           return;
         }
         const profDoc = profSnap.docs[0];
@@ -79,9 +105,17 @@ function PublicProfileInner() {
 
         if (prof.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", prof.lastResultId));
-          setResult(rSnap.exists() ? rSnap.data() : null);
+          if (rSnap.exists()) {
+            const r = rSnap.data();
+            setResult(r);
+            setAnswersById(normalizeAnswers(r.answers));
+          } else {
+            setResult(null);
+            setAnswersById({});
+          }
         } else {
           setResult(null);
+          setAnswersById({});
         }
 
         // counts
@@ -210,16 +244,16 @@ function PublicProfileInner() {
   const hasP = Number.isFinite(baseP);
 
   const econ = hasE ? baseE + dE : null;
-  const soc = hasS ? baseS + dS : null;
+  const soc  = hasS ? baseS + dS : null;
   const glob = hasG ? baseG : null;
   const prog = hasP ? baseP : null;
 
   const hasAny = hasE || hasS || hasG || hasP;
   const hasAdvanced = hasG || hasP;
 
-  // contributions per axis (for hover explanations)
+  // contributions per axis (from normalized answers)
   const contributions = useMemo(() => {
-    const ans = (result && result.answers) || {};
+    const ans = answersById || {};
     const make = (axis) =>
       questions
         .filter((q) => q.axis === axis)
@@ -236,7 +270,7 @@ function PublicProfileInner() {
       global: make("global"),
       progress: make("progress"),
     };
-  }, [result]);
+  }, [answersById]);
 
   const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "—");
   const firstName = (profile?.displayName || profile?.username || "User").split(" ")[0];
@@ -249,19 +283,25 @@ function PublicProfileInner() {
     progress: { bg: "#FFEDD5", bar: "#FED7AA", dot: "#F97316" }, // orange
   };
 
-  // answers list for Answers tab (political compass)
+  // answers list for Answers tab (no default to 3)
   const compassAnswers = useMemo(() => {
-    const ans = (result && result.answers) || {};
+    const ans = answersById || {};
     return questions.map((q) => {
-      const v = Number.isFinite(Number(ans[q.id])) ? Number(ans[q.id]) : 3;
+      const raw = ans[q.id];
+      const has = Number.isFinite(Number(raw));
+      const v = has ? Number(raw) : null;
       const label =
-        q.type === "yesno"
-          ? (v >= 3 ? "Yes" : "No")
+        !has
+          ? "Not answered"
+          : q.type === "yesno"
+          ? v >= 3
+            ? "Yes"
+            : "No"
           : ({ 1: "Strongly Disagree", 2: "Disagree", 3: "Neutral", 4: "Agree", 5: "Strongly Agree" }[v] ||
             String(v));
-      return { id: `compass-${q.id}`, source: "Political Compass", text: q.text, type: q.type, axis: q.axis, value: v, label };
+      return { id: `compass-${q.id}`, source: "Political Compass", text: q.text, type: q.type, axis: q.axis, value: v, label, has };
     });
-  }, [result]);
+  }, [answersById]);
 
   if (loading) return <p className="text-center mt-10">Loading profile…</p>;
   if (notFound || !profile) return <p className="text-center mt-10">Profile not found.</p>;
@@ -429,16 +469,18 @@ function PublicProfileInner() {
                     </div>
                     <div className="font-medium">{a.text}</div>
                     <div className="mt-1 text-sm">
-                      Answer: <span className="font-semibold">{a.label}</span>{" "}
-                      <span className="text-gray-500">({a.value})</span>
+                      {a.has ? (
+                        <>Answer: <span className="font-semibold">{a.label}</span>{" "}
+                        <span className="text-gray-500">({a.value})</span></>
+                      ) : (
+                        <span className="text-gray-500 italic">Not answered</span>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
-          {/* If you also want to show Hot Topics answers here, you can add a list below similar to the private profile page. */}
         </div>
       )}
 
@@ -479,7 +521,9 @@ function PublicProfileInner() {
               <li key={p.id} className="py-2 flex items-center justify-between">
                 <div>
                   <div className="font-medium">{p.displayName || p.username || "User"}</div>
-                  {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
+                  {p.username && (
+                    <div className="text-sm text-gray-500">@{p.username}</div>
+                  )}
                 </div>
                 {p.username && (
                   <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">
