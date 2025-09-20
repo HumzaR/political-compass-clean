@@ -28,7 +28,7 @@ export default function SidebarLayout({ children }) {
           <NavLink href="/quiz">Quiz</NavLink>
           <NavLink href="/results">Results</NavLink>
 
-          {/* ✅ NEW: My Answers in the sidebar */}
+          {/* ✅ Added link */}
           <NavLink href="/my-answers">My Answers</NavLink>
 
           <NavLink href="/hot-topics">Hot Topics</NavLink>
