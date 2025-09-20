@@ -22,20 +22,20 @@ export default function SidebarLayout({ children }) {
     <div className="min-h-screen flex">
       {/* Sidebar */}
       <aside className="w-56 border-r bg-white p-4">
-        <h1 className="text-lg font-bold mb-6">Political Compass</h1>
-        <nav className="flex flex-col gap-2">
-          <NavLink href="/">Home</NavLink>
-          <NavLink href="/quiz">Quiz</NavLink>
-          <NavLink href="/results">Results</NavLink>
+        <h1 className="text-lg font-bold mb-1">Political Compass</h1>
+        <p className="text-xs text-gray-500 mb-6">find your footing</p>
 
-          {/* ✅ Added link */}
+        <nav className="flex flex-col gap-2">
+          <NavLink href="/profile">My Profile</NavLink>
+
+          {/* ✅ New link */}
           <NavLink href="/my-answers">My Answers</NavLink>
 
           <NavLink href="/hot-topics">Hot Topics</NavLink>
-          <NavLink href="/profile">My Profile</NavLink>
           <NavLink href="/settings">Settings</NavLink>
-          <NavLink href="/login">Login</NavLink>
         </nav>
+
+        <div className="mt-8 text-[11px] text-gray-400">v0.1 · MVP</div>
       </aside>
 
       {/* Main content */}
