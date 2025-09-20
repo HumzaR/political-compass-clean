@@ -1,53 +1,45 @@
 // components/SidebarLayout.js
-import Link from "next/link";
-import { useRouter } from "next/router";
+import Link from 'next/link';
+import { useRouter } from 'next/router';
 
-export default function SidebarLayout({ children }) {
+function NavLink({ href, children }) {
   const router = useRouter();
-
-  const isActive = (href) => router.pathname === href;
-
-  const NavLink = ({ href, label }) => (
+  const active = router.pathname === href;
+  return (
     <Link
       href={href}
-      className={[
-        "flex items-center gap-3 px-3 py-2 rounded-lg transition",
-        isActive(href)
-          ? "bg-indigo-50 text-indigo-700 font-semibold"
-          : "text-gray-700 hover:bg-gray-100",
-      ].join(" ")}
+      className={`block px-4 py-2 rounded transition ${
+        active ? 'bg-black text-white' : 'hover:bg-gray-200'
+      }`}
     >
-      <span>{label}</span>
+      {children}
     </Link>
   );
+}
 
+export default function SidebarLayout({ children }) {
   return (
-    <div className="min-h-screen bg-gray-50 md:pl-64">
-      {/* Sidebar (fixed on left, hidden on small screens) */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-64 border-r bg-white">
-        <div className="flex flex-col w-full h-full p-4">
-          {/* Brand */}
-          <div className="mb-6">
-            <Link href="/" className="block">
-              <div className="text-xl font-bold text-indigo-700">Political Compass</div>
-              <div className="text-xs text-gray-500">find your footing</div>
-            </Link>
-          </div>
+    <div className="min-h-screen flex">
+      {/* Sidebar */}
+      <aside className="w-56 border-r bg-white p-4">
+        <h1 className="text-lg font-bold mb-1">Political Compass</h1>
+        <p className="text-xs text-gray-500 mb-6">find your footing</p>
 
-          {/* Nav */}
-          <nav className="flex flex-col gap-1">
-            <NavLink href="/profile" label="My Profile" />
-            <NavLink href="/hot-topics" label="Hot Topics" />
-            <div className="h-px my-2 bg-gray-200" />
-            <NavLink href="/settings" label="Settings" />
-          </nav>
+        <nav className="flex flex-col gap-2">
+          <NavLink href="/profile">My Profile</NavLink>
 
-          <div className="mt-auto pt-4 text-xs text-gray-400">v0.1 • MVP</div>
-        </div>
+          {/* ✅ New link */}
+          <NavLink href="/my-answers">My Answers</NavLink>
+
+          <NavLink href="/hot-topics">Hot Topics</NavLink>
+          <NavLink href="/settings">Settings</NavLink>
+        </nav>
+
+        <div className="mt-8 text-[11px] text-gray-400">v0.1 · MVP</div>
       </aside>
 
       {/* Main content */}
-      <main className="min-h-screen">{children}</main>
+      <main className="flex-1 bg-gray-50">{children}</main>
     </div>
   );
 }
