@@ -1,13 +1,11 @@
 // pages/_app.js
-import "../styles/globals.css";
-import SidebarLayout from "../components/SidebarLayout";
+import '../styles/globals.css';
+import SidebarLayout from '../components/SidebarLayout';
 
-function MyApp({ Component, pageProps }) {
-  // Always wrap every page with the sidebar layout
-  const getLayout =
-    Component.getLayout || ((page) => <SidebarLayout>{page}</SidebarLayout>);
-
-  return getLayout(<Component {...pageProps} />);
+export default function MyApp({ Component, pageProps }) {
+  return (
+    <SidebarLayout>
+      <Component {...pageProps} />
+    </SidebarLayout>
+  );
 }
-
-export default MyApp;
