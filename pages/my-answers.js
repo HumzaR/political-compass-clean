@@ -1,7 +1,6 @@
 // pages/my-answers.js
 import { useEffect, useMemo, useState } from 'react';
 import questions from '../data/questions';
-import { computeContributions, aggregateAxes } from '../lib/scoring';
 
 const LABELS = {
   1: 'Strongly Disagree',
@@ -19,6 +18,7 @@ function loadAnswers() {
     return {};
   }
 }
+
 function saveAnswers(a) {
   try {
     localStorage.setItem('pc_answers', JSON.stringify(a));
@@ -26,10 +26,13 @@ function saveAnswers(a) {
 }
 
 function groupQuestions(allQs) {
+  // Hot topics explicitly flagged with type === 'hot'
   const hot = allQs.filter((q) => q.type === 'hot');
-  const nonHot = allQs.filter((q) => q.type !== 'hot');
-  const core = nonHot.slice(0, 20);
-  const advanced = nonHot.slice(20, 40);
+  // Main 40 (non-hot)
+  const main = allQs.filter((q) => q.type !== 'hot');
+  // First 20 = Core; Next 20 = Advanced
+  const core = main.slice(0, 20);
+  const advanced = main.slice(20, 40);
   return { core, advanced, hot };
 }
 
@@ -46,13 +49,15 @@ function QuestionRow({ q, value, onChange }) {
     <div className="relative group border rounded p-3 bg-white">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs text-gray-500 uppercase tracking-wide">{q.axis}</div>
+          {q.axis && (
+            <div className="text-xs text-gray-500 uppercase tracking-wide">{q.axis}</div>
+          )}
           <div className="font-medium">{q.text}</div>
         </div>
         <AnswerBadge value={value} />
       </div>
 
-      {/* Hover / focus menu */}
+      {/* Hover / focus menu with the five Likert options */}
       <div
         className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 transition
                    absolute right-3 top-3 z-20 bg-white border rounded shadow"
@@ -77,16 +82,6 @@ export default function MyAnswersPage() {
   const [answers, setAnswers] = useState({});
   const { core, advanced, hot } = useMemo(() => groupQuestions(questions), []);
 
-  // Live scores
-  const { normalized, answeredCount } = useMemo(() => {
-    const contribs = computeContributions(answers, questions);
-    const agg = aggregateAxes(contribs, questions);
-    return {
-      normalized: agg.normalized,
-      answeredCount: Object.keys(answers).length,
-    };
-  }, [answers]);
-
   useEffect(() => {
     setAnswers(loadAnswers());
   }, []);
@@ -94,7 +89,7 @@ export default function MyAnswersPage() {
   const handleChange = (qid, choice) => {
     setAnswers((prev) => {
       const next = { ...prev, [qid]: choice };
-      saveAnswers(next);
+      saveAnswers(next); // persist immediately so Results reflects it
       return next;
     });
   };
@@ -114,33 +109,21 @@ export default function MyAnswersPage() {
     );
   };
 
+  const totalAnswered = Object.keys(answers).length;
+
   return (
     <div className="max-w-4xl mx-auto px-5 py-8">
-      <h1 className="text-2xl font-semibold mb-1">My Answers</h1>
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-2xl font-semibold">My Answers</h1>
+        <a href="/results" className="text-sm px-3 py-2 rounded border hover:bg-gray-50">View Results</a>
+      </div>
       <p className="text-sm text-gray-600 mb-6">
-        Hover any question to change your answer. Updates apply immediately and reflect in your results.
+        Hover any question to change your answer. Changes save immediately and will be reflected in your scores.
       </p>
 
-      {/* Live score preview */}
-      <div className="mb-6 grid sm:grid-cols-2 gap-4">
-        <div className="border rounded p-4 bg-white">
-          <h3 className="font-semibold mb-2">Live Axis Scores</h3>
-          <ul className="text-sm space-y-1">
-            {Object.entries(normalized).map(([axis, val]) =>
-              typeof val === 'number' ? (
-                <li key={axis} className="flex justify-between">
-                  <span className="capitalize">{axis}</span>
-                  <span>{val.toFixed(3)}</span>
-                </li>
-              ) : null
-            )}
-          </ul>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <h3 className="font-semibold mb-2">Progress</h3>
-          <p className="text-sm text-gray-700">
-            Answered: <span className="font-medium">{answeredCount}</span> / {questions.length}
-          </p>
+      <div className="mb-6 border rounded p-4 bg-white">
+        <div className="text-sm text-gray-700">
+          Answered: <span className="font-medium">{totalAnswered}</span> / {questions.length}
         </div>
       </div>
 
@@ -148,7 +131,7 @@ export default function MyAnswersPage() {
       {renderSection('Advanced (second 20)', advanced)}
       {renderSection('Hot Topics', hot)}
 
-      {Object.keys(answers).length === 0 && (
+      {totalAnswered === 0 && (
         <div className="text-sm text-gray-600">
           You haven’t answered anything yet. Go to the <a className="underline" href="/quiz">Quiz</a>.
         </div>
