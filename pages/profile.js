@@ -13,15 +13,16 @@ import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
-import YourAnswersPanel from '../components/YourAnswersPanel'; // panel for rendering answers (separate section)
-import { loadAnswers } from '../lib/answers'; // ✅ Firestore-first loader for answers
+import YourAnswersPanel from "../components/YourAnswersPanel";
 
 // Normalize answers from result doc into a map keyed by question id
 function normalizeAnswers(raw) {
   // Already a plain object? Assume by-id if any key matches a known id.
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const keys = Object.keys(raw);
-    const haveIdKey = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
+    const haveIdKey = keys.some((k) =>
+      questions.some((q) => String(q.id) === String(k))
+    );
     if (haveIdKey) return raw;
     // Could be an object but using indexes as keys: convert
     const byId = {};
@@ -50,7 +51,9 @@ function ProfileInner() {
   // auth
   const [user, setUser] = useState(undefined);
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u || null)), []);
-  useEffect(() => { if (user === null) router.replace("/login"); }, [user, router]);
+  useEffect(() => {
+    if (user === null) router.replace("/login");
+  }, [user, router]);
 
   // ui state
   const [activeTab, setActiveTab] = useState("overview"); // overview | answers
@@ -85,38 +88,38 @@ function ProfileInner() {
       setPageError("");
       try {
         const pSnap = await getDoc(doc(db, "profiles", user.uid));
-        if (!pSnap.exists()) { router.replace("/quiz"); return; }
+        if (!pSnap.exists()) {
+          router.replace("/quiz");
+          return;
+        }
         const p = { id: pSnap.id, ...pSnap.data() };
         setProfile(p);
 
-        // Load latest result doc (for base scores)
-        let r = null;
         if (p.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", p.lastResultId));
-          if (rSnap.exists()) r = rSnap.data();
-        }
-        setResult(r);
-
-        // ✅ Prefer live answers from Firestore (/answers/{uid}) via loadAnswers()
-        // Fallback to latest result.answers if Firestore answers not present.
-        let byId = {};
-        try {
-          const direct = await loadAnswers(); // Firestore-first, mirrors to localStorage
-          if (direct && Object.keys(direct).length > 0) {
-            byId = direct;
-          } else if (r?.answers) {
-            byId = normalizeAnswers(r.answers);
+          if (rSnap.exists()) {
+            const r = rSnap.data();
+            setResult(r);
+            setAnswersById(normalizeAnswers(r.answers));
+          } else {
+            setResult(null);
+            setAnswersById({});
           }
-        } catch (e) {
-          console.warn("loadAnswers failed, falling back to result.answers", e);
-          if (r?.answers) byId = normalizeAnswers(r.answers);
+        } else {
+          setResult(null);
+          setAnswersById({});
         }
-        setAnswersById(byId);
 
-        // followers / following counts
-        const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
+        const followersQ = query(
+          collection(db, "follows"),
+          where("followeeUid", "==", user.uid)
+        );
         setFollowersCount((await getDocs(followersQ)).size);
-        const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
+
+        const followingQ = query(
+          collection(db, "follows"),
+          where("followerUid", "==", user.uid)
+        );
         setFollowingCount((await getDocs(followingQ)).size);
       } catch (e) {
         console.error(e);
@@ -128,33 +131,82 @@ function ProfileInner() {
     if (user) load();
   }, [user, router]);
 
-  // Refresh answers when switching to the "answers" tab (ensures latest edits are visible)
-  useEffect(() => {
+  // ✅ Ensure these handlers are in scope (fixes ReferenceError)
+  const openFollowers = async () => {
     if (!user) return;
-    if (activeTab !== "answers") return;
-    let cancelled = false;
-    (async () => {
-      setLoadingAnswers(true);
-      setAnswersError("");
-      try {
-        const direct = await loadAnswers();
-        if (!cancelled) setAnswersById(direct || {});
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setAnswersError("Failed to load your answers.");
-      } finally {
-        if (!cancelled) setLoadingAnswers(false);
+    setFollowersOpen(true);
+    setFollowersLoading(true);
+    setFollowersList([]);
+    try {
+      const followersQ = query(
+        collection(db, "follows"),
+        where("followeeUid", "==", user.uid)
+      );
+      const snap = await getDocs(followersQ);
+      const uids = snap.docs
+        .map((d) => d.data()?.followerUid)
+        .filter(Boolean);
+      const profs = [];
+      for (const uid of uids) {
+        const ps = await getDoc(doc(db, "profiles", uid));
+        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
       }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, user]);
+      profs.sort((a, b) =>
+        (a.username || "").localeCompare(b.username || "")
+      );
+      setFollowersList(profs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFollowersLoading(false);
+    }
+  };
+
+  const openFollowing = async () => {
+    if (!user) return;
+    setFollowingOpen(true);
+    setFollowingLoading(true);
+    setFollowingList([]);
+    try {
+      const followingQ = query(
+        collection(db, "follows"),
+        where("followerUid", "==", user.uid)
+      );
+      const snap = await getDocs(followingQ);
+      const uids = snap.docs
+        .map((d) => d.data()?.followeeUid)
+        .filter(Boolean);
+      const profs = [];
+      for (const uid of uids) {
+        const ps = await getDoc(doc(db, "profiles", uid));
+        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
+      }
+      profs.sort((a, b) =>
+        (a.username || "").localeCompare(b.username || "")
+      );
+      setFollowingList(profs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFollowingLoading(false);
+    }
+  };
+
+  const closeFollowers = () => {
+    setFollowersOpen(false);
+    setFollowersList([]);
+  };
+  const closeFollowing = () => {
+    setFollowingOpen(false);
+    setFollowingList([]);
+  };
 
   // compute display scores + contributions
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
 
   const econBase = Number(result?.economicScore);
-  const socBase  = Number(result?.socialScore);
+  const socBase = Number(result?.socialScore);
   const globBase = Number(result?.globalScore);
   const progBase = Number(result?.progressScore);
 
@@ -164,7 +216,7 @@ function ProfileInner() {
   const hasP = Number.isFinite(progBase);
 
   const econ = hasE ? econBase + dE : null;
-  const soc  = hasS ? socBase + dS : null;
+  const soc = hasS ? socBase + dS : null;
   const glob = hasG ? globBase : null;
   const prog = hasP ? progBase : null;
 
@@ -197,8 +249,8 @@ function ProfileInner() {
   // palette for AxisCards
   const palette = {
     economic: { bg: "#DBEAFE", bar: "#BFDBFE", dot: "#3B82F6" }, // blue
-    social:   { bg: "#EDE9FE", bar: "#DDD6FE", dot: "#8B5CF6" }, // violet
-    global:   { bg: "#DCFCE7", bar: "#BBF7D0", dot: "#22C55E" }, // green
+    social: { bg: "#EDE9FE", bar: "#DDD6FE", dot: "#8B5CF6" }, // violet
+    global: { bg: "#DCFCE7", bar: "#BBF7D0", dot: "#22C55E" }, // green
     progress: { bg: "#FFEDD5", bar: "#FED7AA", dot: "#F97316" }, // orange
   };
 
@@ -211,14 +263,25 @@ function ProfileInner() {
       const v = has ? Number(raw) : null;
       const label = !has
         ? "Not answered"
-        : (q.type === "yesno"
-            ? (v >= 3 ? "Yes" : "No")
-            : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)));
+        : q.type === "yesno"
+        ? v >= 3
+          ? "Yes"
+          : "No"
+        : (
+            {
+              1: "Strongly Disagree",
+              2: "Disagree",
+              3: "Neutral",
+              4: "Agree",
+              5: "Strongly Agree",
+            }[v] || String(v)
+          );
       return { id: `compass-${q.id}`, text: q.text, axis: q.axis, value: v, label, has };
     });
   }, [answersById]);
 
-  if (user === undefined || loadingProfile) return <p className="text-center mt-10">Loading your profile…</p>;
+  if (user === undefined || loadingProfile)
+    return <p className="text-center mt-10">Loading your profile…</p>;
   if (user === null) return null;
 
   return (
@@ -226,21 +289,51 @@ function ProfileInner() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">My Profile</h1>
         <div className="flex gap-3">
-          <button onClick={openFollowers} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">
+          <button
+            onClick={openFollowers}
+            className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
+          >
             <span className="font-semibold">{followersCount}</span> Followers
           </button>
-          <button onClick={openFollowing} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">
+          <button
+            onClick={openFollowing}
+            className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50"
+          >
             <span className="font-semibold">{followingCount}</span> Following
           </button>
         </div>
       </div>
 
-      {pageError && <div className="mt-3 p-3 rounded border bg-red-50 text-red-700 text-sm">{pageError}</div>}
+      {pageError && (
+        <div className="mt-3 p-3 rounded border bg-red-50 text-red-700 text-sm">
+          {pageError}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mt-6 mb-6">
-        <button onClick={() => setActiveTab("overview")} className={["px-4 py-2 rounded", activeTab === "overview" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Overview</button>
-        <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Your answers</button>
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={[
+            "px-4 py-2 rounded",
+            activeTab === "overview"
+              ? "bg-indigo-600 text-white"
+              : "bg-gray-200 text-gray-800",
+          ].join(" ")}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab("answers")}
+          className={[
+            "px-4 py-2 rounded",
+            activeTab === "answers"
+              ? "bg-indigo-600 text-white"
+              : "bg-gray-200 text-gray-800",
+          ].join(" ")}
+        >
+          Your answers
+        </button>
       </div>
 
       {activeTab === "overview" ? (
@@ -250,13 +343,21 @@ function ProfileInner() {
             <div className="flex gap-2">
               <button
                 onClick={() => setMode("split")}
-                className={`px-3 py-1.5 rounded border ${mode==="split"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                className={`px-3 py-1.5 rounded border ${
+                  mode === "split"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white hover:bg-gray-50"
+                }`}
               >
                 Split (4 graphs)
               </button>
               <button
                 onClick={() => setMode("spider")}
-                className={`px-3 py-1.5 rounded border ${mode==="spider"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                className={`px-3 py-1.5 rounded border ${
+                  mode === "spider"
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white hover:bg-gray-50"
+                }`}
               >
                 Combined (spider)
               </button>
@@ -265,9 +366,17 @@ function ProfileInner() {
 
           {/* Quick compass */}
           <div className="mb-6">
-            <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
+            <div className="text-sm text-gray-700 font-medium mb-2">
+              Compass (Economic vs Social)
+            </div>
             {econ === null || soc === null ? (
-              <p className="text-gray-600">No quiz result yet. <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.</p>
+              <p className="text-gray-600">
+                No quiz result yet.{" "}
+                <Link href="/quiz" className="text-indigo-600 underline">
+                  Take the quiz
+                </Link>
+                .
+              </p>
             ) : (
               <CompassCanvas econ={econ} soc={soc} />
             )}
@@ -286,7 +395,13 @@ function ProfileInner() {
               {!hasAdvanced && (
                 <p className="mt-3 text-sm text-gray-600 text-center">
                   Global/National and Progressive/Conservative appear after the{" "}
-                  <a href="/quiz?start=advanced" className="text-indigo-600 underline">advanced 20 questions</a>.
+                  <a
+                    href="/quiz?start=advanced"
+                    className="text-indigo-600 underline"
+                  >
+                    advanced 20 questions
+                  </a>
+                  .
                 </p>
               )}
             </div>
@@ -313,7 +428,7 @@ function ProfileInner() {
                   title="Global vs National"
                   negLabel="Globalist"
                   posLabel="Nationalist"
-                  value={hasAdvanced ? (glob ?? 0) : 0}
+                  value={hasAdvanced ? glob ?? 0 : 0}
                   contributions={contributions.global}
                   color={palette.global}
                 />
@@ -321,7 +436,7 @@ function ProfileInner() {
                   title="Progressive vs Conservative"
                   negLabel="Progressive"
                   posLabel="Conservative"
-                  value={hasAdvanced ? (prog ?? 0) : 0}
+                  value={hasAdvanced ? prog ?? 0 : 0}
                   contributions={contributions.progress}
                   color={palette.progress}
                 />
@@ -330,10 +445,15 @@ function ProfileInner() {
               {!hasAdvanced && (
                 <div className="mt-4 rounded border border-dashed p-4 bg-gray-50">
                   <p className="text-gray-700">
-                    To unlock <strong>Global vs National</strong> and <strong>Progressive vs Conservative</strong> (with explanations),
-                    continue with the <strong>advanced 20 questions</strong>.
+                    To unlock <strong>Global vs National</strong> and{" "}
+                    <strong>Progressive vs Conservative</strong> (with
+                    explanations), continue with the{" "}
+                    <strong>advanced 20 questions</strong>.
                   </p>
-                  <a href="/quiz?start=advanced" className="inline-block mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+                  <a
+                    href="/quiz?start=advanced"
+                    className="inline-block mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+                  >
                     Continue with the last 20 questions
                   </a>
                 </div>
@@ -344,26 +464,37 @@ function ProfileInner() {
       ) : (
         <div className="bg-white p-6 rounded shadow">
           <h2 className="text-xl font-semibold mb-4">Your answers</h2>
-          {answersError && <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>}
+          {answersError && (
+            <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">
+              {answersError}
+            </div>
+          )}
 
           <div className="mb-6">
             <h3 className="font-semibold mb-2">Political Compass</h3>
-            {!hasAny ? (
+            {compassAnswers.every((a) => !a.has) ? (
               <p className="text-gray-600">No compass answers yet.</p>
             ) : (
               <div className="space-y-3">
                 {compassAnswers.map((a) => (
                   <div key={a.id} className="border rounded p-3">
                     <div className="text-sm text-gray-500 mb-1">
-                      <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">Political Compass</span>
+                      <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">
+                        Political Compass
+                      </span>
                       Axis: {a.axis}
                     </div>
                     <div className="font-medium">{a.text}</div>
                     <div className="mt-1 text-sm">
                       {a.has ? (
-                        <>Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></>
+                        <>
+                          Answer: <span className="font-semibold">{a.label}</span>{" "}
+                          <span className="text-gray-500">({a.value})</span>
+                        </>
                       ) : (
-                        <span className="text-gray-500 italic">Not answered</span>
+                        <span className="text-gray-500 italic">
+                          Not answered
+                        </span>
                       )}
                     </div>
                   </div>
@@ -372,47 +503,73 @@ function ProfileInner() {
             )}
           </div>
 
-          {/* If you render Hot Topics here, keep your existing section below */}
-          {/* You can also show <YourAnswersPanel /> elsewhere on the page if you want a second, grouped view */}
+          {/* Firestore-backed grouped view + Edit link */}
+          <YourAnswersPanel />
         </div>
       )}
 
       {/* Followers Modal */}
       <Modal title="Followers" isOpen={followersOpen} onClose={closeFollowers}>
-        {followersLoading ? <p>Loading…</p> :
-          followersList.length === 0 ? <p className="text-gray-600">No followers yet.</p> : (
-            <ul className="divide-y">
-              {followersList.map((p) => (
-                <li key={p.id} className="py-2 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{p.displayName || p.username || "User"}</div>
-                    {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
+        {followersLoading ? (
+          <p>Loading…</p>
+        ) : followersList.length === 0 ? (
+          <p className="text-gray-600">No followers yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {followersList.map((p) => (
+              <li key={p.id} className="py-2 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">
+                    {p.displayName || p.username || "User"}
                   </div>
-                  {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
-                </li>
-              ))}
-            </ul>
-          )
-        }
+                  {p.username && (
+                    <div className="text-sm text-gray-500">@{p.username}</div>
+                  )}
+                </div>
+                {p.username && (
+                  <Link
+                    href={`/u/${p.username}`}
+                    className="px-3 py-1.5 rounded border hover:bg-gray-50"
+                  >
+                    View
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </Modal>
 
       {/* Following Modal */}
       <Modal title="Following" isOpen={followingOpen} onClose={closeFollowing}>
-        {followingLoading ? <p>Loading…</p> :
-          followingList.length === 0 ? <p className="text-gray-600">Not following anyone yet.</p> : (
-            <ul className="divide-y">
-              {followingList.map((p) => (
-                <li key={p.id} className="py-2 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{p.displayName || p.username || "User"}</div>
-                    {p.username && <div className="text-sm text-gray-500">@{p.username}</div>}
+        {followingLoading ? (
+          <p>Loading…</p>
+        ) : followingList.length === 0 ? (
+          <p className="text-gray-600">Not following anyone yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {followingList.map((p) => (
+              <li key={p.id} className="py-2 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">
+                    {p.displayName || p.username || "User"}
                   </div>
-                  {p.username && <Link href={`/u/${p.username}`} className="px-3 py-1.5 rounded border hover:bg-gray-50">View</Link>}
-                </li>
-              ))}
-            </ul>
-          )
-        }
+                  {p.username && (
+                    <div className="text-sm text-gray-500">@{p.username}</div>
+                  )}
+                </div>
+                {p.username && (
+                  <Link
+                    href={`/u/${p.username}`}
+                    className="px-3 py-1.5 rounded border hover:bg-gray-50"
+                  >
+                    View
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </div>
   );
