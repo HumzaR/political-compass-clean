@@ -13,6 +13,8 @@ import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
+import YourAnswersPanel from '../components/YourAnswersPanel'; // panel for rendering answers (separate section)
+import { loadAnswers } from '../lib/answers'; // ✅ Firestore-first loader for answers
 
 // Normalize answers from result doc into a map keyed by question id
 function normalizeAnswers(raw) {
@@ -87,21 +89,31 @@ function ProfileInner() {
         const p = { id: pSnap.id, ...pSnap.data() };
         setProfile(p);
 
+        // Load latest result doc (for base scores)
+        let r = null;
         if (p.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", p.lastResultId));
-          if (rSnap.exists()) {
-            const r = rSnap.data();
-            setResult(r);
-            setAnswersById(normalizeAnswers(r.answers));
-          } else {
-            setResult(null);
-            setAnswersById({});
-          }
-        } else {
-          setResult(null);
-          setAnswersById({});
+          if (rSnap.exists()) r = rSnap.data();
         }
+        setResult(r);
 
+        // ✅ Prefer live answers from Firestore (/answers/{uid}) via loadAnswers()
+        // Fallback to latest result.answers if Firestore answers not present.
+        let byId = {};
+        try {
+          const direct = await loadAnswers(); // Firestore-first, mirrors to localStorage
+          if (direct && Object.keys(direct).length > 0) {
+            byId = direct;
+          } else if (r?.answers) {
+            byId = normalizeAnswers(r.answers);
+          }
+        } catch (e) {
+          console.warn("loadAnswers failed, falling back to result.answers", e);
+          if (r?.answers) byId = normalizeAnswers(r.answers);
+        }
+        setAnswersById(byId);
+
+        // followers / following counts
         const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
         setFollowersCount((await getDocs(followersQ)).size);
         const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
@@ -116,50 +128,26 @@ function ProfileInner() {
     if (user) load();
   }, [user, router]);
 
-  // open followers modal
-  const openFollowers = async () => {
+  // Refresh answers when switching to the "answers" tab (ensures latest edits are visible)
+  useEffect(() => {
     if (!user) return;
-    setFollowersOpen(true);
-    setFollowersLoading(true);
-    setFollowersList([]);
-    try {
-      const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
-      const snap = await getDocs(followersQ);
-      const uids = snap.docs.map((d) => d.data()?.followerUid).filter(Boolean);
-      const profs = [];
-      for (const uid of uids) {
-        const ps = await getDoc(doc(db, "profiles", uid));
-        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
+    if (activeTab !== "answers") return;
+    let cancelled = false;
+    (async () => {
+      setLoadingAnswers(true);
+      setAnswersError("");
+      try {
+        const direct = await loadAnswers();
+        if (!cancelled) setAnswersById(direct || {});
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setAnswersError("Failed to load your answers.");
+      } finally {
+        if (!cancelled) setLoadingAnswers(false);
       }
-      profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
-      setFollowersList(profs);
-    } catch (e) { console.error(e); }
-    finally { setFollowersLoading(false); }
-  };
-
-  // open following modal
-  const openFollowing = async () => {
-    if (!user) return;
-    setFollowingOpen(true);
-    setFollowingLoading(true);
-    setFollowingList([]);
-    try {
-      const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
-      const snap = await getDocs(followingQ);
-      const uids = snap.docs.map((d) => d.data()?.followeeUid).filter(Boolean);
-      const profs = [];
-      for (const uid of uids) {
-        const ps = await getDoc(doc(db, "profiles", uid));
-        if (ps.exists()) profs.push({ id: ps.id, ...ps.data() });
-      }
-      profs.sort((a, b) => (a.username || "").localeCompare(b.username || ""));
-      setFollowingList(profs);
-    } catch (e) { console.error(e); }
-    finally { setFollowingLoading(false); }
-  };
-
-  const closeFollowers = () => { setFollowersOpen(false); setFollowersList([]); };
-  const closeFollowing = () => { setFollowingOpen(false); setFollowingList([]); };
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, user]);
 
   // compute display scores + contributions
   const dE = Number(profile?.hotEconDelta || 0);
@@ -385,6 +373,7 @@ function ProfileInner() {
           </div>
 
           {/* If you render Hot Topics here, keep your existing section below */}
+          {/* You can also show <YourAnswersPanel /> elsewhere on the page if you want a second, grouped view */}
         </div>
       )}
 
