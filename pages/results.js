@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import questions from '../data/questions';
 import { computeContributions, aggregateAxes, topDrivers } from '../lib/scoring';
+import { loadAnswers } from '../lib/answers';
 
 export default function Results() {
   const [normalized, setNormalized] = useState({});
@@ -9,17 +10,14 @@ export default function Results() {
   const [debug, setDebug] = useState(null);
 
   useEffect(() => {
-    let answers = {};
-    try {
-      const raw = localStorage.getItem('pc_answers');
-      if (raw) answers = JSON.parse(raw);
-    } catch {}
-
-    const contribs = computeContributions(answers, questions);
-    const agg = aggregateAxes(contribs, questions);
-    setNormalized(agg.normalized);
-    setDrivers(topDrivers(contribs, 5));
-    setDebug({ answers, sums: agg.sums, norms: agg.norms, normalized: agg.normalized });
+    (async () => {
+      const answers = await loadAnswers(); // Firestore if authed; else local
+      const contribs = computeContributions(answers, questions);
+      const agg = aggregateAxes(contribs, questions);
+      setNormalized(agg.normalized);
+      setDrivers(topDrivers(contribs, 5));
+      setDebug({ answers, sums: agg.sums, norms: agg.norms, normalized: agg.normalized });
+    })();
   }, []);
 
   return (
@@ -58,6 +56,7 @@ export default function Results() {
         </div>
       </div>
 
+      {/* Dev-only debug */}
       <div className="text-left mt-6 p-4 border rounded bg-gray-50">
         <h2 className="font-semibold mb-2">Debug</h2>
         <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>

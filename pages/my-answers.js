@@ -1,6 +1,7 @@
 // pages/my-answers.js
 import { useEffect, useMemo, useState } from 'react';
 import questions from '../data/questions';
+import { loadAnswers, saveAnswers, groupQuestions } from '../lib/answers';
 
 const LABELS = {
   1: 'Strongly Disagree',
@@ -10,26 +11,12 @@ const LABELS = {
   5: 'Strongly Agree',
 };
 
-function loadAnswers() {
-  try {
-    const raw = localStorage.getItem('pc_answers');
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
-function saveAnswers(a) {
-  try { localStorage.setItem('pc_answers', JSON.stringify(a)); } catch {}
-}
-
-function groupQuestions(allQs) {
-  const hot = allQs.filter((q) => q.type === 'hot');
-  const main = allQs.filter((q) => q.type !== 'hot');
-  const core = main.slice(0, 20);
-  const advanced = main.slice(20, 40);
-  return { core, advanced, hot };
-}
-
 function AnswerBadge({ value }) {
-  return <span className="text-xs px-2 py-1 rounded-full border">{value ? LABELS[value] : '—'}</span>;
+  return (
+    <span className="text-xs px-2 py-1 rounded-full border">
+      {value ? LABELS[value] : '—'}
+    </span>
+  );
 }
 
 function QuestionRow({ q, value, onChange }) {
@@ -44,11 +31,16 @@ function QuestionRow({ q, value, onChange }) {
       </div>
 
       {/* Hover / focus menu */}
-      <div className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 transition absolute right-3 top-3 z-20 bg-white border rounded shadow">
-        {[1,2,3,4,5].map(v => (
+      <div
+        className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 transition
+                   absolute right-3 top-3 z-20 bg-white border rounded shadow"
+      >
+        {[1, 2, 3, 4, 5].map((v) => (
           <button
             key={v}
-            className={`block text-left px-3 py-1 text-sm w-56 hover:bg-gray-50 ${value===v ? 'bg-black text-white hover:bg-black' : ''}`}
+            className={`block text-left px-3 py-1 text-sm w-56 hover:bg-gray-50 ${
+              value === v ? 'bg-black text-white hover:bg-black' : ''
+            }`}
             onClick={() => onChange(q.id, v)}
           >
             {LABELS[v]}
@@ -63,24 +55,30 @@ export default function MyAnswersPage() {
   const [answers, setAnswers] = useState({});
   const { core, advanced, hot } = useMemo(() => groupQuestions(questions), []);
 
-  useEffect(() => { setAnswers(loadAnswers()); }, []);
+  useEffect(() => {
+    (async () => {
+      const loaded = await loadAnswers();
+      setAnswers(loaded);
+    })();
+  }, []);
 
-  const handleChange = (qid, choice) => {
-    setAnswers(prev => {
+  const handleChange = async (qid, choice) => {
+    setAnswers((prev) => {
       const next = { ...prev, [qid]: choice };
-      saveAnswers(next);
+      // Optimistic: update immediately
+      saveAnswers(next); // Firestore (if authed) + local mirror
       return next;
     });
   };
 
   const renderSection = (title, list) => {
-    const answeredQs = list.filter(q => answers[q.id] != null);
+    const answeredQs = list.filter((q) => answers[q.id] != null);
     if (!answeredQs.length) return null;
     return (
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-3">{title}</h2>
         <div className="grid gap-3">
-          {answeredQs.map(q => (
+          {answeredQs.map((q) => (
             <QuestionRow key={q.id} q={q} value={answers[q.id]} onChange={handleChange} />
           ))}
         </div>
@@ -96,7 +94,9 @@ export default function MyAnswersPage() {
         <h1 className="text-2xl font-semibold">My Answers</h1>
         <a href="/results" className="text-sm px-3 py-2 rounded border hover:bg-gray-50">View Results</a>
       </div>
-      <p className="text-sm text-gray-600 mb-6">Hover any question to change your answer. Changes save immediately and will be reflected in your scores.</p>
+      <p className="text-sm text-gray-600 mb-6">
+        Hover any question to change your answer. Changes save immediately and will be reflected in your scores.
+      </p>
 
       <div className="mb-6 border rounded p-4 bg-white">
         <div className="text-sm text-gray-700">

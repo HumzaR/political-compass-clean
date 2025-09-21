@@ -1,93 +1,60 @@
 // pages/quiz.js
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
-import questions from '../data/questions';
+import { useState, useEffect } from "react";
+import questions from "../data/questions";
+import { useRouter } from "next/router";
+import { loadAnswers, saveAnswers } from "../lib/answers";
 
 export default function Quiz() {
   const router = useRouter();
   const [answers, setAnswers] = useState({});
   const [current, setCurrent] = useState(0);
-  const total = questions.length;
+
+  useEffect(() => {
+    // Load existing answers (Firestore if authed, else local)
+    (async () => {
+      const loaded = await loadAnswers();
+      setAnswers(loaded);
+    })();
+  }, []);
 
   const question = questions[current];
 
-  useEffect(() => {
-    // Load any saved answers (optional)
-    try {
-      const saved = localStorage.getItem('pc_answers');
-      if (saved) setAnswers(JSON.parse(saved));
-    } catch {}
-  }, []);
+  const handleAnswer = async (value) => {
+    const next = { ...answers, [question.id]: value };
+    setAnswers(next);
+    // Persist immediately (Firestore if authed; always mirror local)
+    await saveAnswers(next);
 
-  useEffect(() => {
-    // Persist answers for results page
-    try {
-      localStorage.setItem('pc_answers', JSON.stringify(answers));
-    } catch {}
-  }, [answers]);
-
-  const handleAnswer = (value) => {
-    const updated = { ...answers, [question.id]: value };
-    setAnswers(updated);
-
-    if (current < total - 1) {
-      setCurrent((c) => c + 1);
+    if (current < questions.length - 1) {
+      setCurrent(current + 1);
     } else {
-      // Navigate to results
-      router.push('/results');
+      // Navigate to results (no need to encode answers in URL anymore, but harmless if you want)
+      router.push(`/results`);
     }
   };
 
-  const progress = Math.round(((current + 1) / total) * 100);
+  const renderOptions = () => {
+    if (question.type === "scale") {
+      return [1, 2, 3, 4, 5].map((n) => (
+        <button key={n} onClick={() => handleAnswer(n)} className="m-2 p-2 border">
+          {n}
+        </button>
+      ));
+    } else {
+      return (
+        <>
+          <button onClick={() => handleAnswer(1)} className="m-2 p-2 border">Yes</button>
+          <button onClick={() => handleAnswer(0)} className="m-2 p-2 border">No</button>
+        </>
+      );
+    }
+  };
 
   return (
-    <div className="min-h-screen px-5 py-8 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-3">Quiz</h1>
-
-      {/* Progress */}
-      <div className="mb-6">
-        <div className="flex justify-between text-sm mb-1">
-          <span>Question {current + 1} of {total}</span>
-          <span>{progress}%</span>
-        </div>
-        <div className="w-full bg-gray-200 h-2 rounded">
-          <div className="h-2 bg-blue-600 rounded" style={{ width: progress + '%' }} />
-        </div>
-      </div>
-
-      {/* Question */}
-      <div className="border rounded p-5 bg-white">
-        <p className="text-lg mb-5">{question.text}</p>
-
-        {/* 5-point Likert (1..5). Adjust labels to your preference */}
-        <div className="grid grid-cols-5 gap-2">
-          {[1, 2, 3, 4, 5].map((v) => (
-            <button
-              key={v}
-              onClick={() => handleAnswer(v)}
-              className={`px-3 py-2 rounded border hover:bg-gray-50 ${
-                answers[question.id] === v ? 'bg-black text-white' : 'bg-white'
-              }`}
-            >
-              {v === 1 ? 'Strongly Disagree' :
-               v === 2 ? 'Disagree' :
-               v === 3 ? 'Neutral' :
-               v === 4 ? 'Agree' : 'Strongly Agree'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Optional: Back button */}
-      <div className="mt-4">
-        <button
-          className="text-sm underline"
-          onClick={() => setCurrent((c) => Math.max(0, c - 1))}
-          disabled={current === 0}
-        >
-          Back
-        </button>
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-screen p-8">
+      <h1 className="text-xl font-bold mb-4">Question {current + 1} of {questions.length}</h1>
+      <p className="text-center mb-6">{question.text}</p>
+      <div>{renderOptions()}</div>
     </div>
   );
 }
