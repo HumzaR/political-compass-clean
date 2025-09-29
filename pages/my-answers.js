@@ -1,4 +1,5 @@
 // pages/my-answers.js
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import questions from '../data/questions';
 import { loadAnswers, saveAnswers, groupQuestions } from '../lib/answers';
@@ -24,7 +25,11 @@ function QuestionRow({ q, value, onChange }) {
     <div className="relative group border rounded p-3 bg-white">
       <div className="flex items-center justify-between gap-3">
         <div>
-          {q.axis && <div className="text-xs text-gray-500 uppercase tracking-wide">{q.axis}</div>}
+          {q.axis && (
+            <div className="text-xs text-gray-500 uppercase tracking-wide">
+              {q.axis}
+            </div>
+          )}
           <div className="font-medium">{q.text}</div>
         </div>
         <AnswerBadge value={value} />
@@ -79,7 +84,12 @@ export default function MyAnswersPage() {
         <h2 className="text-lg font-semibold mb-3">{title}</h2>
         <div className="grid gap-3">
           {answeredQs.map((q) => (
-            <QuestionRow key={q.id} q={q} value={answers[q.id]} onChange={handleChange} />
+            <QuestionRow
+              key={q.id}
+              q={q}
+              value={answers[q.id]}
+              onChange={handleChange}
+            />
           ))}
         </div>
       </section>
@@ -92,15 +102,29 @@ export default function MyAnswersPage() {
     <div className="max-w-4xl mx-auto px-5 py-8">
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-semibold">My Answers</h1>
-        <a href="/results" className="text-sm px-3 py-2 rounded border hover:bg-gray-50">View Results</a>
+        <a href="/results" className="text-sm px-3 py-2 rounded border hover:bg-gray-50">
+          View Results
+        </a>
       </div>
       <p className="text-sm text-gray-600 mb-6">
         Hover any question to change your answer. Changes save immediately and will be reflected in your scores.
       </p>
 
       <div className="mb-6 border rounded p-4 bg-white">
-        <div className="text-sm text-gray-700">
-          Answered: <span className="font-medium">{totalAnswered}</span> / {questions.length}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-gray-700">
+            Answered: <span className="font-medium">{totalAnswered}</span> / {questions.length}
+          </div>
+
+          {/* Button to jump to the advanced 20; shows until all 40 are done */}
+          {totalAnswered < 40 && (
+            <Link
+              href="/quiz?start=advanced"
+              className="inline-flex items-center rounded-md border border-indigo-600 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              Complete advanced 20
+            </Link>
+          )}
         </div>
       </div>
 
@@ -110,7 +134,11 @@ export default function MyAnswersPage() {
 
       {totalAnswered === 0 && (
         <div className="text-sm text-gray-600">
-          You haven’t answered anything yet. Go to the <a className="underline" href="/quiz">Quiz</a>.
+          You haven’t answered anything yet. Go to the{' '}
+          <a className="underline" href="/quiz">
+            Quiz
+          </a>
+          .
         </div>
       )}
     </div>
