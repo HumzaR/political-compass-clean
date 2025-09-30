@@ -11,16 +11,14 @@ import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
-import YourAnswersPanel from "../components/YourAnswersPanel";
-import { loadAnswers } from "../lib/answers";
-import { computeContributions, aggregateAxes } from "../lib/scoring";
 
-// Normalize old result.answers (array or index-keys) into by-id map
+const AIInsightsRight = dynamic(() => import("../components/AIInsightsRight"), { ssr: false });
+
 function normalizeAnswers(raw) {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const keys = Object.keys(raw);
-    const looksById = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
-    if (looksById) return raw;
+    const haveIdKey = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
+    if (haveIdKey) return raw;
     const byId = {};
     questions.forEach((q, idx) => {
       const v = raw[idx];
@@ -42,23 +40,19 @@ function normalizeAnswers(raw) {
 function ProfileInner() {
   const router = useRouter();
 
-  // auth
   const [user, setUser] = useState(undefined);
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u || null)), []);
   useEffect(() => { if (user === null) router.replace("/login"); }, [user, router]);
 
-  // ui
-  const [activeTab, setActiveTab] = useState("overview");
-  const [mode, setMode] = useState("split");
+  const [activeTab, setActiveTab] = useState("overview"); // overview | answers
+  const [mode, setMode] = useState("split"); // split | spider
 
-  // data
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [pageError, setPageError] = useState("");
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
   const [answersById, setAnswersById] = useState({});
 
-  // follows
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [followersOpen, setFollowersOpen] = useState(false);
@@ -68,10 +62,8 @@ function ProfileInner() {
   const [followingLoading, setFollowingLoading] = useState(false);
   const [followingList, setFollowingList] = useState([]);
 
-  const [loadingAnswers, setLoadingAnswers] = useState(false);
-  const [answersError, setAnswersError] = useState("");
+  const [answersError] = useState("");
 
-  // load profile + latest result + counts; hydrate answers from result then Firestore
   useEffect(() => {
     const load = async () => {
       if (!user) return;
@@ -83,23 +75,21 @@ function ProfileInner() {
         const p = { id: pSnap.id, ...pSnap.data() };
         setProfile(p);
 
-        let r = null;
         if (p.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", p.lastResultId));
-          if (rSnap.exists()) r = rSnap.data();
+          if (rSnap.exists()) {
+            const r = rSnap.data();
+            setResult(r);
+            setAnswersById(normalizeAnswers(r.answers));
+          } else {
+            setResult(null);
+            setAnswersById({});
+          }
+        } else {
+          setResult(null);
+          setAnswersById({});
         }
-        setResult(r);
 
-        // Start with answers from result (if any)
-        const initial = r?.answers ? normalizeAnswers(r.answers) : {};
-        setAnswersById(initial);
-
-        // Then hydrate from Firestore/local (latest)
-        try {
-          const fresh = await loadAnswers();
-          if (fresh && Object.keys(fresh).length) setAnswersById(fresh);
-        } catch {}
-        // followers/following counts
         const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
         setFollowersCount((await getDocs(followersQ)).size);
         const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
@@ -114,30 +104,11 @@ function ProfileInner() {
     if (user) load();
   }, [user, router]);
 
-  // Refresh answers when switching to "answers" tab
-  useEffect(() => {
-    if (!user || activeTab !== "answers") return;
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoadingAnswers(true);
-        setAnswersError("");
-        const fresh = await loadAnswers();
-        if (!cancelled && fresh) setAnswersById(fresh);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setAnswersError("Failed to load your latest answers.");
-      } finally {
-        if (!cancelled) setLoadingAnswers(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeTab, user]);
-
-  // followers handlers (unchanged)
   const openFollowers = async () => {
     if (!user) return;
-    setFollowersOpen(true); setFollowersLoading(true); setFollowersList([]);
+    setFollowersOpen(true);
+    setFollowersLoading(true);
+    setFollowersList([]);
     try {
       const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
       const snap = await getDocs(followersQ);
@@ -152,9 +123,12 @@ function ProfileInner() {
     } catch (e) { console.error(e); }
     finally { setFollowersLoading(false); }
   };
+
   const openFollowing = async () => {
     if (!user) return;
-    setFollowingOpen(true); setFollowingLoading(true); setFollowingList([]);
+    setFollowingOpen(true);
+    setFollowingLoading(true);
+    setFollowingList([]);
     try {
       const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
       const snap = await getDocs(followingQ);
@@ -169,53 +143,31 @@ function ProfileInner() {
     } catch (e) { console.error(e); }
     finally { setFollowingLoading(false); }
   };
+
   const closeFollowers = () => { setFollowersOpen(false); setFollowersList([]); };
   const closeFollowing = () => { setFollowingOpen(false); setFollowingList([]); };
 
-  // 👉 ALWAYS derive scores from current answers when available
-  const derived = useMemo(() => {
-    const ans = answersById || {};
-    if (!Object.keys(ans).length) return null;
-    try {
-      const contribs = computeContributions(ans, questions);
-      const agg = aggregateAxes(contribs, questions);
-      return agg?.normalized || null; // { economic, social, global, progress } in [-5,5]
-    } catch (e) {
-      console.warn("scoring from answers failed:", e);
-      return null;
-    }
-  }, [answersById]);
-
-  // Old persisted scores from result doc (may be stale)
-  const econPersist = Number(result?.economicScore);
-  const socPersist  = Number(result?.socialScore);
-  const globPersist = Number(result?.globalScore);
-  const progPersist = Number(result?.progressScore);
-
-  // Hot topic deltas (apply on top of econ/social)
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
 
-  // ⬅️ PRECEDENCE CHANGE: prefer derived (from answers) when available, otherwise use persisted
-  const econ = derived && Number.isFinite(derived.economic)
-    ? derived.economic + dE
-    : (Number.isFinite(econPersist) ? econPersist + dE : null);
+  const econBase = Number(result?.economicScore);
+  const socBase  = Number(result?.socialScore);
+  const globBase = Number(result?.globalScore);
+  const progBase = Number(result?.progressScore);
 
-  const soc = derived && Number.isFinite(derived.social)
-    ? derived.social + dS
-    : (Number.isFinite(socPersist) ? socPersist + dS : null);
+  const hasE = Number.isFinite(econBase);
+  const hasS = Number.isFinite(socBase);
+  const hasG = Number.isFinite(globBase);
+  const hasP = Number.isFinite(progBase);
 
-  const glob = derived && Number.isFinite(derived.global)
-    ? derived.global
-    : (Number.isFinite(globPersist) ? globPersist : null);
+  const econ = hasE ? econBase + dE : null;
+  const soc  = hasS ? socBase + dS : null;
+  const glob = hasG ? globBase : null;
+  const prog = hasP ? progBase : null;
 
-  const prog = derived && Number.isFinite(derived.progress)
-    ? derived.progress
-    : (Number.isFinite(progPersist) ? progPersist : null);
+  const hasAny = hasE || hasS || hasG || hasP;
+  const hasAdvanced = hasG || hasP;
 
-  const hasAdvanced = Number.isFinite(glob) || Number.isFinite(prog);
-
-  // For Top drivers: contributions from answers
   const contributions = useMemo(() => {
     const ans = answersById || {};
     const make = (axis) =>
@@ -230,11 +182,19 @@ function ProfileInner() {
         .filter(Boolean);
     return {
       economic: make("economic"),
-      social:   make("social"),
-      global:   make("global"),
+      social: make("social"),
+      global: make("global"),
       progress: make("progress"),
     };
   }, [answersById]);
+
+  const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "—");
+  const palette = {
+    economic: { bg: "#DBEAFE", bar: "#BFDBFE", dot: "#3B82F6" },
+    social:   { bg: "#EDE9FE", bar: "#DDD6FE", dot: "#8B5CF6" },
+    global:   { bg: "#DCFCE7", bar: "#BBF7D0", dot: "#22C55E" },
+    progress: { bg: "#FFEDD5", bar: "#FED7AA", dot: "#F97316" },
+  };
 
   const compassAnswers = useMemo(() => {
     const ans = answersById || {};
@@ -244,9 +204,9 @@ function ProfileInner() {
       const v = has ? Number(raw) : null;
       const label = !has
         ? "Not answered"
-        : q.type === "yesno"
-          ? (v >= 3 ? "Yes" : "No")
-          : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v));
+        : (q.type === "yesno"
+            ? (v >= 3 ? "Yes" : "No")
+            : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)));
       return { id: `compass-${q.id}`, text: q.text, axis: q.axis, value: v, label, has };
     });
   }, [answersById]);
@@ -255,7 +215,7 @@ function ProfileInner() {
   if (user === null) return null;
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">My Profile</h1>
         <div className="flex gap-3">
@@ -276,92 +236,152 @@ function ProfileInner() {
         <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Your answers</button>
       </div>
 
-      {activeTab === "overview" ? (
-        <div className="bg-white p-6 rounded shadow">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-            <h2 className="text-xl font-semibold">Your Spectrum</h2>
-            <div className="flex gap-2">
-              <button onClick={() => setMode("split")} className={`px-3 py-1.5 rounded border ${mode==="split"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}>Split (4 graphs)</button>
-              <button onClick={() => setMode("spider")} className={`px-3 py-1.5 rounded border ${mode==="spider"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}>Combined (spider)</button>
-            </div>
-          </div>
+      {/* --- GRID LAYOUT: main (left) + AI right rail --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr,20rem] gap-6 items-start">
+        {/* LEFT column: original content */}
+        <div>
+          {activeTab === "overview" ? (
+            <div className="bg-white p-6 rounded shadow">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <h2 className="text-xl font-semibold">Your Spectrum</h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setMode("split")}
+                    className={`px-3 py-1.5 rounded border ${mode==="split"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                  >
+                    Split (4 graphs)
+                  </button>
+                  <button
+                    onClick={() => setMode("spider")}
+                    className={`px-3 py-1.5 rounded border ${mode==="spider"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                  >
+                    Combined (spider)
+                  </button>
+                </div>
+              </div>
 
-          {/* 2D Compass */}
-          <div className="mb-6">
-            <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
-            {econ == null || soc == null ? (
-              <p className="text-gray-600">No quiz result yet. <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.</p>
-            ) : (
-              <CompassCanvas econ={econ} soc={soc} />
-            )}
-          </div>
+              {/* Quick compass */}
+              <div className="mb-6">
+                <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
+                {econ === null || soc === null ? (
+                  <p className="text-gray-600">No quiz result yet. <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.</p>
+                ) : (
+                  <CompassCanvas econ={econ} soc={soc} />
+                )}
+              </div>
 
-          {mode === "spider" ? (
-            <div className="py-2">
-              <QuadRadar
-                econ={Number.isFinite(econ) ? econ : 0}
-                soc={Number.isFinite(soc) ? soc : 0}
-                glob={Number.isFinite(glob) ? glob : 0}
-                prog={Number.isFinite(prog) ? prog : 0}
-                fill="rgba(16,185,129,0.12)"
-                stroke="#14b8a6"
-              />
-              {! (Number.isFinite(glob) && Number.isFinite(prog)) && (
-                <p className="mt-3 text-sm text-gray-600 text-center">
-                  Global/National and Progressive/Conservative appear after the{" "}
-                  <a href="/quiz?start=advanced" className="text-indigo-600 underline">advanced 20 questions</a>.
-                </p>
+              {mode === "spider" ? (
+                <div className="py-2">
+                  <QuadRadar
+                    econ={econ ?? 0}
+                    soc={soc ?? 0}
+                    glob={glob ?? 0}
+                    prog={prog ?? 0}
+                    fill="rgba(16,185,129,0.12)"
+                    stroke="#14b8a6"
+                  />
+                  {!hasAdvanced && (
+                    <p className="mt-3 text-sm text-gray-600 text-center">
+                      Global/National and Progressive/Conservative appear after the{" "}
+                      <a href="/quiz?start=advanced" className="text-indigo-600 underline">advanced 20 questions</a>.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <AxisCard
+                      title="Economic"
+                      negLabel="Left"
+                      posLabel="Right"
+                      value={econ ?? 0}
+                      contributions={contributions.economic}
+                      color={palette.economic}
+                    />
+                    <AxisCard
+                      title="Social"
+                      negLabel="Libertarian"
+                      posLabel="Authoritarian"
+                      value={soc ?? 0}
+                      contributions={contributions.social}
+                      color={palette.social}
+                    />
+                    <AxisCard
+                      title="Global vs National"
+                      negLabel="Globalist"
+                      posLabel="Nationalist"
+                      value={hasAdvanced ? (glob ?? 0) : 0}
+                      contributions={contributions.global}
+                      color={palette.global}
+                    />
+                    <AxisCard
+                      title="Progressive vs Conservative"
+                      negLabel="Progressive"
+                      posLabel="Conservative"
+                      value={hasAdvanced ? (prog ?? 0) : 0}
+                      contributions={contributions.progress}
+                      color={palette.progress}
+                    />
+                  </div>
+
+                  {!hasAdvanced && (
+                    <div className="mt-4 rounded border border-dashed p-4 bg-gray-50">
+                      <p className="text-gray-700">
+                        To unlock <strong>Global vs National</strong> and <strong>Progressive vs Conservative</strong> (with explanations),
+                        continue with the <strong>advanced 20 questions</strong>.
+                      </p>
+                      <a href="/quiz?start=advanced" className="inline-block mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+                        Continue with the last 20 questions
+                      </a>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <AxisCard title="Economic" negLabel="Left" posLabel="Right" value={Number.isFinite(econ) ? econ : 0} contributions={contributions.economic} color={{ bg:"#DBEAFE", bar:"#BFDBFE", dot:"#3B82F6" }} />
-                <AxisCard title="Social"   negLabel="Libertarian" posLabel="Authoritarian" value={Number.isFinite(soc) ? soc : 0} contributions={contributions.social} color={{ bg:"#EDE9FE", bar:"#DDD6FE", dot:"#8B5CF6" }} />
-                <AxisCard title="Global vs National" negLabel="Globalist" posLabel="Nationalist" value={Number.isFinite(glob) ? glob : 0} contributions={contributions.global} color={{ bg:"#DCFCE7", bar:"#BBF7D0", dot:"#22C55E" }} />
-                <AxisCard title="Progressive vs Conservative" negLabel="Progressive" posLabel="Conservative" value={Number.isFinite(prog) ? prog : 0} contributions={contributions.progress} color={{ bg:"#FFEDD5", bar:"#FED7AA", dot:"#F97316" }} />
+            <div className="bg-white p-6 rounded shadow">
+              <h2 className="text-xl font-semibold mb-4">Your answers</h2>
+              {answersError && <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>}
+
+              <div className="mb-6">
+                <h3 className="font-semibold mb-2">Political Compass</h3>
+                {!hasAny ? (
+                  <p className="text-gray-600">No compass answers yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {compassAnswers.map((a) => (
+                      <div key={a.id} className="border rounded p-3">
+                        <div className="text-sm text-gray-500 mb-1">
+                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">Political Compass</span>
+                          Axis: {a.axis}
+                        </div>
+                        <div className="font-medium">{a.text}</div>
+                        <div className="mt-1 text-sm">
+                          {a.has ? (
+                            <>Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></>
+                          ) : (
+                            <span className="text-gray-500 italic">Not answered</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </>
+            </div>
           )}
         </div>
-      ) : (
-        <div className="bg-white p-6 rounded shadow">
-          <h2 className="text-xl font-semibold mb-4">Your answers</h2>
-          {answersError && <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>}
-          <YourAnswersPanel />
-          <div className="mt-6">
-            <h3 className="font-semibold mb-2">Political Compass (raw list)</h3>
-            {questions.every((q) => answersById[q.id] == null) ? (
-              <p className="text-gray-600">No compass answers yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {questions.map((q) => {
-                  const raw = answersById[q.id];
-                  const has = Number.isFinite(Number(raw));
-                  const v = has ? Number(raw) : null;
-                  const label = !has
-                    ? "Not answered"
-                    : q.type === "yesno"
-                      ? (v >= 3 ? "Yes" : "No")
-                      : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v));
-                  return (
-                    <div key={`compass-${q.id}`} className="border rounded p-3">
-                      <div className="text-sm text-gray-500 mb-1">
-                        <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">Political Compass</span>
-                        Axis: {q.axis}
-                      </div>
-                      <div className="font-medium">{q.text}</div>
-                      <div className="mt-1 text-sm">
-                        {has ? <>Answer: <span className="font-semibold">{label}</span> <span className="text-gray-500">({v})</span></> : <span className="text-gray-500 italic">Not answered</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+
+        {/* RIGHT column: AI rail */}
+        <AIInsightsRight
+          finalScores={{
+            economic: econ ?? null,
+            social: soc ?? null,
+            global: glob ?? null,
+            progress: prog ?? null,
+          }}
+        />
+      </div>
 
       {/* Followers Modal */}
       <Modal title="Followers" isOpen={followersOpen} onClose={closeFollowers}>
