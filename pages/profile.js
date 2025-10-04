@@ -12,30 +12,10 @@ import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
 
-const AIInsightsRight = dynamic(() => import("../components/AIInsightsRight"), { ssr: false });
+// ✅ NEW: single source for answers
+import { loadAnswers, subscribeAnswers } from "../lib/answers";
 
-function normalizeAnswers(raw) {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const keys = Object.keys(raw);
-    const haveIdKey = keys.some((k) => questions.some((q) => String(q.id) === String(k)));
-    if (haveIdKey) return raw;
-    const byId = {};
-    questions.forEach((q, idx) => {
-      const v = raw[idx];
-      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
-    });
-    return byId;
-  }
-  if (Array.isArray(raw)) {
-    const byId = {};
-    questions.forEach((q, idx) => {
-      const v = raw[idx];
-      if (Number.isFinite(Number(v))) byId[q.id] = Number(v);
-    });
-    return byId;
-  }
-  return {};
-}
+const AIInsightsRight = dynamic(() => import("../components/AIInsightsRight"), { ssr: false });
 
 function ProfileInner() {
   const router = useRouter();
@@ -51,6 +31,8 @@ function ProfileInner() {
   const [pageError, setPageError] = useState("");
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
+
+  // ✅ Answers come from /answers/{uid} (with fallback handled inside lib/answers)
   const [answersById, setAnswersById] = useState({});
 
   const [followersCount, setFollowersCount] = useState(0);
@@ -62,8 +44,7 @@ function ProfileInner() {
   const [followingLoading, setFollowingLoading] = useState(false);
   const [followingList, setFollowingList] = useState([]);
 
-  const [answersError] = useState("");
-
+  // Load profile + latest result meta (scores/hot deltas) and start answers subscription
   useEffect(() => {
     const load = async () => {
       if (!user) return;
@@ -77,23 +58,21 @@ function ProfileInner() {
 
         if (p.lastResultId) {
           const rSnap = await getDoc(doc(db, "results", p.lastResultId));
-          if (rSnap.exists()) {
-            const r = rSnap.data();
-            setResult(r);
-            setAnswersById(normalizeAnswers(r.answers));
-          } else {
-            setResult(null);
-            setAnswersById({});
-          }
+          setResult(rSnap.exists() ? rSnap.data() : null);
         } else {
           setResult(null);
-          setAnswersById({});
         }
 
         const followersQ = query(collection(db, "follows"), where("followeeUid", "==", user.uid));
         setFollowersCount((await getDocs(followersQ)).size);
         const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
         setFollowingCount((await getDocs(followingQ)).size);
+
+        // ✅ answers: single source (Firestore /answers/{uid}, with internal fallback)
+        const first = await loadAnswers();
+        setAnswersById(first);
+        const unsub = subscribeAnswers((a) => setAnswersById(a || {}));
+        return () => unsub && unsub();
       } catch (e) {
         console.error(e);
         setPageError(e?.code ? `Error: ${e.code}` : "Failed to load profile.");
@@ -101,7 +80,12 @@ function ProfileInner() {
         setLoadingProfile(false);
       }
     };
-    if (user) load();
+    if (user) {
+      const maybeUnsub = load();
+      return () => {
+        if (typeof maybeUnsub === "function") maybeUnsub();
+      };
+    }
   }, [user, router]);
 
   const openFollowers = async () => {
@@ -147,9 +131,11 @@ function ProfileInner() {
   const closeFollowers = () => { setFollowersOpen(false); setFollowersList([]); };
   const closeFollowing = () => { setFollowingOpen(false); setFollowingList([]); };
 
+  // Hot topic deltas
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
 
+  // Base scores from latest result (kept as-is)
   const econBase = Number(result?.economicScore);
   const socBase  = Number(result?.socialScore);
   const globBase = Number(result?.globalScore);
@@ -168,6 +154,7 @@ function ProfileInner() {
   const hasAny = hasE || hasS || hasG || hasP;
   const hasAdvanced = hasG || hasP;
 
+  // Contributions derived from single-source answers
   const contributions = useMemo(() => {
     const ans = answersById || {};
     const make = (axis) =>
@@ -236,9 +223,8 @@ function ProfileInner() {
         <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Your answers</button>
       </div>
 
-      {/* --- GRID LAYOUT: main (left) + AI right rail --- */}
+      {/* Grid: left content + AI right rail (unchanged) */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,20rem] gap-6 items-start">
-        {/* LEFT column: original content */}
         <div>
           {activeTab === "overview" ? (
             <div className="bg-white p-6 rounded shadow">
@@ -260,7 +246,7 @@ function ProfileInner() {
                 </div>
               </div>
 
-              {/* Quick compass */}
+              {/* Compass */}
               <div className="mb-6">
                 <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
                 {econ === null || soc === null ? (
@@ -320,7 +306,6 @@ function ProfileInner() {
                       posLabel="Conservative"
                       value={hasAdvanced ? (prog ?? 0) : 0}
                       contributions={contributions.progress}
-                      color={palette.progress}
                     />
                   </div>
 
@@ -341,32 +326,32 @@ function ProfileInner() {
           ) : (
             <div className="bg-white p-6 rounded shadow">
               <h2 className="text-xl font-semibold mb-4">Your answers</h2>
-              {answersError && <div className="mb-4 p-3 rounded border bg-red-50 text-red-700 text-sm">{answersError}</div>}
-
-              <div className="mb-6">
-                <h3 className="font-semibold mb-2">Political Compass</h3>
-                {!hasAny ? (
-                  <p className="text-gray-600">No compass answers yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {compassAnswers.map((a) => (
-                      <div key={a.id} className="border rounded p-3">
-                        <div className="text-sm text-gray-500 mb-1">
-                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">Political Compass</span>
-                          Axis: {a.axis}
-                        </div>
-                        <div className="font-medium">{a.text}</div>
-                        <div className="mt-1 text-sm">
-                          {a.has ? (
-                            <>Answer: <span className="font-semibold">{a.label}</span> <span className="text-gray-500">({a.value})</span></>
-                          ) : (
-                            <span className="text-gray-500 italic">Not answered</span>
-                          )}
-                        </div>
+              <div className="space-y-3">
+                {questions.map((q) => {
+                  const v = answersById?.[q.id];
+                  const has = Number.isFinite(Number(v));
+                  const label = !has
+                    ? "Not answered"
+                    : (q.type === "yesno"
+                        ? (v >= 3 ? "Yes" : "No")
+                        : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)));
+                  return (
+                    <div key={q.id} className="border rounded p-3">
+                      <div className="text-sm text-gray-500 mb-1">
+                        <span className="inline-block px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-800 mr-2">Political Compass</span>
+                        Axis: {q.axis}
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="font-medium">{q.text}</div>
+                      <div className="mt-1 text-sm">
+                        {has ? (
+                          <>Answer: <span className="font-semibold">{label}</span> <span className="text-gray-500">({v})</span></>
+                        ) : (
+                          <span className="text-gray-500 italic">Not answered</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -375,10 +360,10 @@ function ProfileInner() {
         {/* RIGHT column: AI rail */}
         <AIInsightsRight
           finalScores={{
-            economic: econ ?? null,
-            social: soc ?? null,
-            global: glob ?? null,
-            progress: prog ?? null,
+            economic: Number.isFinite(Number(result?.economicScore)) ? Number(result?.economicScore) + Number(profile?.hotEconDelta || 0) : null,
+            social:   Number.isFinite(Number(result?.socialScore)) ? Number(result?.socialScore) + Number(profile?.hotSocDelta || 0) : null,
+            global:   Number.isFinite(Number(result?.globalScore)) ? Number(result?.globalScore) : null,
+            progress: Number.isFinite(Number(result?.progressScore)) ? Number(result?.progressScore) : null,
           }}
         />
       </div>
