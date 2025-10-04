@@ -1,0 +1,15 @@
+﻿{
+  "name": "pc-functions",
+  "private": true,
+  "engines": { "node": "18" },
+  "main": "index.js",
+  "scripts": {
+    "lint": "echo \"(no lint)\"",
+    "build": "echo \"(no build)\"",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.0.1"
+  }
+}

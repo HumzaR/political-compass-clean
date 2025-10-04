@@ -1,0 +1,5 @@
+﻿[
+  { "id": 1, "index": 0, "text": "Taxes on the wealthy should be increased to support public services.", "axis": "economic", "weight": 1, "direction": -1 },
+  { "id": 2, "index": 1, "text": "Free markets generally produce better outcomes than government planning.", "axis": "economic", "weight": 1, "direction": 1 }
+  /* TODO: Replace with your COMPLETE 40-question list */
+]
