@@ -205,6 +205,9 @@ function ProfileInner() {
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">My Profile</h1>
+        <Link href="/feed" className="text-indigo-600 hover:underline text-sm">
+          ← Back to Feed
+        </Link>
         <div className="flex gap-3">
           <button onClick={openFollowers} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">
             <span className="font-semibold">{followersCount}</span> Followers
