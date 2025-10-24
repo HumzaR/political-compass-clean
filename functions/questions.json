@@ -1,5 +1,325 @@
-﻿[
-  { "id": 1, "index": 0, "text": "Taxes on the wealthy should be increased to support public services.", "axis": "economic", "weight": 1, "direction": -1 },
-  { "id": 2, "index": 1, "text": "Free markets generally produce better outcomes than government planning.", "axis": "economic", "weight": 1, "direction": 1 }
-  /* TODO: Replace with your COMPLETE 40-question list */
+[
+  {
+    "id": 1,
+    "index": 0,
+    "text": "Taxes on the wealthy should be increased to support public services.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 2,
+    "index": 1,
+    "text": "Free markets generally produce better outcomes than government planning.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 3,
+    "index": 2,
+    "text": "Workers benefit when trade unions have strong influence.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 4,
+    "index": 3,
+    "text": "Government should ensure basic necessities (healthcare, housing, food) for all citizens.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 5,
+    "index": 4,
+    "text": "Large corporations have too much power in society.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 6,
+    "index": 5,
+    "text": "Public transport should be funded even if it doesn’t make a profit.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 7,
+    "index": 6,
+    "text": "A universal basic income would do more harm than good.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 8,
+    "index": 7,
+    "text": "Privatization of industries (e.g., rail, energy) improves efficiency.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 9,
+    "index": 8,
+    "text": "Welfare programs make people overly dependent on the state.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 10,
+    "index": 9,
+    "text": "Regulation of businesses usually does more harm than good.",
+    "axis": "economic",
+    "weight": 1,
+    "direction": 1
+  },
+
+  {
+    "id": 11,
+    "index": 10,
+    "text": "Marriage should only be between a man and a woman.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 12,
+    "index": 11,
+    "text": "The government should not interfere in private consensual relationships.",
+    "axis": "social",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 13,
+    "index": 12,
+    "text": "Law and order are more important than personal freedoms.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 14,
+    "index": 13,
+    "text": "Freedom of speech must be protected even if it offends others.",
+    "axis": "social",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 15,
+    "index": 14,
+    "text": "Religious values should play a more important role in government.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 16,
+    "index": 15,
+    "text": "People should have the right to own firearms.",
+    "axis": "social",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 17,
+    "index": 16,
+    "text": "The death penalty is necessary for the most serious crimes.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 18,
+    "index": 17,
+    "text": "Government surveillance is acceptable if it protects us from terrorism.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 19,
+    "index": 18,
+    "text": "Schools should teach obedience and discipline before creativity.",
+    "axis": "social",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 20,
+    "index": 19,
+    "text": "Euthanasia should be legal for people with terminal illnesses.",
+    "axis": "social",
+    "weight": 1,
+    "direction": -1
+  },
+
+  {
+    "id": 21,
+    "index": 20,
+    "text": "International organizations (like the UN or EU) should have more authority over nations.",
+    "axis": "global",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 22,
+    "index": 21,
+    "text": "Immigration should be strictly limited.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 23,
+    "index": 22,
+    "text": "Global trade generally benefits everyone.",
+    "axis": "global",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 24,
+    "index": 23,
+    "text": "We should prioritize protecting our national culture over multiculturalism.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 25,
+    "index": 24,
+    "text": "Climate change requires international cooperation even if it harms national economies.",
+    "axis": "global",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 26,
+    "index": 25,
+    "text": "Foreign aid is often a waste of resources.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 27,
+    "index": 26,
+    "text": "Nations should always prioritize their own citizens before others.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 28,
+    "index": 27,
+    "text": "Military intervention in other countries is sometimes necessary to protect national interests.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 29,
+    "index": 28,
+    "text": "Borders should be more open to allow free movement of people.",
+    "axis": "global",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 30,
+    "index": 29,
+    "text": "National sovereignty must never be compromised.",
+    "axis": "global",
+    "weight": 1,
+    "direction": 1
+  },
+
+  {
+    "id": 31,
+    "index": 30,
+    "text": "Tradition should guide our policies more than innovation.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 32,
+    "index": 31,
+    "text": "Science and technology should drive social change.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 33,
+    "index": 32,
+    "text": "Abortion should always be legal and accessible.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 34,
+    "index": 33,
+    "text": "Marriage should be preserved as a traditional institution.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 35,
+    "index": 34,
+    "text": "We should respect traditional family structures over new ones.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 36,
+    "index": 35,
+    "text": "LGBTQ+ rights should be fully protected by law.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 37,
+    "index": 36,
+    "text": "Cultural traditions should not be abandoned even if they conflict with modern values.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 38,
+    "index": 37,
+    "text": "It is important to teach children to question authority.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": -1
+  },
+  {
+    "id": 39,
+    "index": 38,
+    "text": "Society works best when everyone maintains their traditional roles.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": 1
+  },
+  {
+    "id": 40,
+    "index": 39,
+    "text": "Art and culture should evolve freely without restrictions from tradition.",
+    "axis": "progress",
+    "weight": 1,
+    "direction": -1
+  }
 ]
