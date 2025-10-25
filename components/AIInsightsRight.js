@@ -1,101 +1,133 @@
-// components/AIInsightsRight.js
+// components/AIInsightsRight.jsx
 import { useEffect, useState } from "react";
-import { loadAnswers } from "../lib/answers";
-import { fetchAIInsights } from "../lib/ai";
-
-function Pill({ children, tone = "default" }) {
-  const tones = {
-    default: "bg-gray-100 text-gray-800",
-    warn: "bg-yellow-100 text-yellow-800",
-    error: "bg-red-100 text-red-800",
-    ok: "bg-emerald-100 text-emerald-800",
-  };
-  return (
-    <span className={`inline-block text-[11px] px-2 py-0.5 rounded ${tones[tone] || tones.default}`}>
-      {children}
-    </span>
-  );
-}
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "../lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function AIInsightsRight({ finalScores }) {
-  const [state, setState] = useState({ loading: true, error: "", data: null });
+  const [uid, setUid] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [ai, setAI] = useState({
+    summary: null,
+    contradictions: [],
+    generatedAt: null,
+    version: null,
+  });
 
   useEffect(() => {
-    let mounted = true;
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUid(u?.uid || null);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
     (async () => {
+      if (!uid) {
+        setAI({ summary: null, contradictions: [], generatedAt: null, version: null });
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
-        const answersById = await loadAnswers(); // Firestore-first + local fallback
-        const resp = await fetchAIInsights({ answersById, finalScores });
-        if (!mounted) return;
-        if (!resp.ok && resp.error) setState({ loading: false, error: resp.error, data: null });
-        else setState({ loading: false, error: "", data: resp });
+        // 1) read lastResultId from profile
+        const profSnap = await getDoc(doc(db, "profiles", uid));
+        const lastId = profSnap.exists() ? profSnap.data()?.lastResultId : null;
+        if (!lastId) {
+          if (alive) {
+            setAI({ summary: null, contradictions: [], generatedAt: null, version: null });
+          }
+          return;
+        }
+
+        // 2) read cached AI from results/{lastResultId}
+        const resSnap = await getDoc(doc(db, "results", lastId));
+        if (!resSnap.exists()) {
+          if (alive) {
+            setAI({ summary: null, contradictions: [], generatedAt: null, version: null });
+          }
+          return;
+        }
+
+        const data = resSnap.data();
+        const when =
+          data.aiGeneratedAt?.toDate ? data.aiGeneratedAt.toDate() :
+          typeof data.aiGeneratedAt === "string" ? new Date(data.aiGeneratedAt) :
+          null;
+
+        if (alive) {
+          setAI({
+            summary: data.aiSummary || null,
+            contradictions: Array.isArray(data.aiContradictions) ? data.aiContradictions : [],
+            generatedAt: when,
+            version: data.aiVersion || null,
+          });
+        }
       } catch (e) {
-        if (!mounted) return;
-        setState({ loading: false, error: e.message || "Failed to load", data: null });
+        console.error("AIInsightsRight:", e);
+        if (alive) {
+          setAI({ summary: null, contradictions: [], generatedAt: null, version: null });
+        }
+      } finally {
+        if (alive) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
-  }, [finalScores]);
+    return () => { alive = false; };
+  }, [uid]);
+
+  const ScorePill = ({ label, value }) => (
+    <div className="flex items-center justify-between px-3 py-1.5 rounded border bg-white">
+      <span className="text-sm text-gray-600">{label}</span>
+      <span className="font-semibold">{Number.isFinite(value) ? value.toFixed(2) : "—"}</span>
+    </div>
+  );
 
   return (
-    <aside className="lg:w-80 w-full lg:sticky lg:top-6 space-y-4">
-      <div className="rounded border bg-white p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-sm font-semibold">AI Summary</h3>
-          <Pill tone="ok">Beta</Pill>
-        </div>
-        {state.loading ? (
-          <p className="text-sm text-gray-600">Generating summary…</p>
-        ) : state.error ? (
-          <>
-            <p className="text-sm text-red-700">Unavailable: {state.error}</p>
-            <p className="text-xs text-gray-500 mt-1">Ensure <code>OPENAI_API_KEY</code> is set.</p>
-          </>
-        ) : (
-          <p className="text-sm text-gray-800 leading-relaxed">
-            {state.data?.summary || "No summary available."}
-          </p>
-        )}
+    <aside className="w-full border rounded-lg p-4 bg-white">
+      <h3 className="text-lg font-semibold mb-3">AI Insights</h3>
+
+      {/* Scores snapshot (unchanged, from props) */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <ScorePill label="Economic" value={finalScores?.economic} />
+        <ScorePill label="Social"   value={finalScores?.social} />
+        <ScorePill label="Global"   value={finalScores?.global} />
+        <ScorePill label="Progress" value={finalScores?.progress} />
       </div>
 
-      <div className="rounded border bg-white p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold">Potential Contradictions</h3>
-          {!state.loading && !state.error && (
-            <Pill tone={(state.data?.contradictions?.length || 0) ? "warn" : "ok"}>
-              {(state.data?.contradictions?.length || 0) ? `${state.data.contradictions.length} found` : "None"}
-            </Pill>
+      {/* AI summary / contradictions (cached) */}
+      {loading ? (
+        <div className="text-sm text-gray-500">Loading…</div>
+      ) : ai.summary || (ai.contradictions?.length ?? 0) > 0 ? (
+        <>
+          {ai.summary && (
+            <div className="mb-4">
+              <div className="text-sm font-medium mb-1">Summary</div>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{ai.summary}</p>
+            </div>
           )}
+
+          {ai.contradictions?.length > 0 && (
+            <div>
+              <div className="text-sm font-medium mb-1">Potential Tensions</div>
+              <ul className="list-disc list-inside text-sm text-gray-800 space-y-1">
+                {ai.contradictions.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-4 text-xs text-gray-400">
+            {ai.generatedAt ? `Generated ${ai.generatedAt.toLocaleString()}` : "Generated recently"}
+            {ai.version ? ` • ${ai.version}` : null}
+          </div>
+        </>
+      ) : (
+        <div className="text-sm text-gray-500">
+          No AI insights yet. Answer a few questions to see your summary here.
         </div>
-        {state.loading ? (
-          <p className="text-sm text-gray-600">Checking answers…</p>
-        ) : state.error ? (
-          <p className="text-sm text-gray-600">—</p>
-        ) : (state.data?.contradictions?.length || 0) === 0 ? (
-          <p className="text-sm text-gray-700">No obvious tensions detected.</p>
-        ) : (
-          <ul className="space-y-3">
-            {state.data.contradictions.slice(0, 5).map((c, i) => (
-              <li key={i} className="border rounded p-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs">
-                    <span className="font-medium">Q{c.qidA}</span> ↔ <span className="font-medium">Q{c.qidB}</span>
-                  </div>
-                  <Pill tone={c.severity === "high" ? "error" : c.severity === "medium" ? "warn" : "default"}>
-                    {c.severity || "low"}
-                  </Pill>
-                </div>
-                <div className="mt-1 text-xs text-gray-800">{c.reason}</div>
-                {c.suggestion && (
-                  <div className="mt-1 text-[11px] text-gray-600">
-                    <span className="font-semibold">Consider:</span> {c.suggestion}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      )}
     </aside>
   );
 }

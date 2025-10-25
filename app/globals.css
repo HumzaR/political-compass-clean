@@ -2,5 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 
-/* pages-wide tweaks */
+/* app-wide tweaks */
 html, body { height: 100%; }
