@@ -1,78 +1,54 @@
+// src/components/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-  Home,
-  ListChecks,
-  BarChart2,
-  Flame,
-  Users,
-  UserCircle2,
-  Settings
-} from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
+import { Home, Compass, Flame, Settings } from "lucide-react";
 
-type NavItem = {
-  label: string;
+type Item = {
   href: string;
-  Icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
 };
 
-export default function Sidebar() {
-  const pathname = usePathname();
+const NAV: Item[] = [
+  { href: "/", label: "Home", icon: Home },
+  { href: "/quiz", label: "Quiz", icon: Compass },
+  { href: "/hot-topics", label: "Hot Topics", icon: Flame },
+  { href: "/settings", label: "Settings", icon: Settings },
+];
 
-  const nav: NavItem[] = useMemo(
-    () => [
-      { label: "Home",         href: "/",            Icon: Home },
-      { label: "Quiz",         href: "/quiz",        Icon: ListChecks },
-      { label: "Results",      href: "/results",     Icon: BarChart2 },
-      { label: "Hot Topics",   href: "/hot-topics",  Icon: Flame },
-      { label: "Following",    href: "/following",   Icon: Users },
-      { label: "Profile",      href: "/profile",     Icon: UserCircle2 },
-      { label: "Settings",     href: "/settings",    Icon: Settings }
-    ],
-    []
-  );
+export default function Sidebar() {
+  // Works in both the Pages Router and App Router without importing next/router/next/navigation.
+  const [path, setPath] = useState<string>("/");
+  useEffect(() => {
+    if (typeof window !== "undefined") setPath(window.location.pathname);
+  }, []);
 
   return (
-    <aside className="h-screen w-64 shrink-0 border-r border-neutral-200/70 dark:border-neutral-800/70 bg-white dark:bg-neutral-950">
-      <div className="px-5 py-4 border-b border-neutral-200/70 dark:border-neutral-800/70">
-        <Link href="/" className="block text-xl font-semibold tracking-tight">
-          Political Compass
-        </Link>
-      </div>
-
-      <nav className="p-3">
-        <ul className="space-y-1">
-          {nav.map(({ label, href, Icon }) => {
-            const active =
-              pathname === href ||
-              (href !== "/" && pathname?.startsWith(href));
-
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className={[
-                    "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                      : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:text-white dark:hover:bg-neutral-800"
-                  ].join(" ")}
-                >
-                  {/* Icon */}
-                  <Icon
-                    aria-hidden="true"
-                    className="h-4 w-4 shrink-0"
-                    strokeWidth={1.75}
-                  />
-                  <span className="truncate">{label}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+    <aside className="w-60 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-950/70 backdrop-blur">
+      <div className="p-4 text-lg font-semibold tracking-tight">Compass</div>
+      <nav className="px-2 pb-4 space-y-1">
+        {NAV.map(({ href, label, icon: Icon }) => {
+          const active = path === href || (href !== "/" && path.startsWith(href));
+          const base =
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors";
+          const inactive =
+            "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:text-white dark:hover:bg-neutral-900";
+          const activeCls =
+            "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white";
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`${base} ${active ? activeCls : inactive}`}
+            >
+              {/* Lucide icons inherit text color via currentColor */}
+              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );
