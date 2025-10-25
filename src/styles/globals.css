@@ -1,0 +1,22 @@
+/* src/styles/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light/Dark base colors (optional) */
+:root {
+  color-scheme: light dark;
+}
+
+html, body, #__next {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-neutral-900 dark:bg-neutral-950 dark:text-white;
+}
+
+/* Utility helpers (optional) */
+.container-px {
+  @apply px-4 sm:px-6 lg:px-8;
+}
