@@ -3,12 +3,13 @@
 @tailwind utilities;
 
 /* Light by default */
+:root { color-scheme: light; }
+
 html, body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-white text-gray-900;
 }
 
-/* Optional: if you ever add class="dark" on <html>, this kicks in */
-:root.dark html, :root.dark body,
-html.dark, body.dark {
-  @apply bg-neutral-900 text-gray-100;
+/* Reset common container defaults */
+* {
+  box-sizing: border-box;
 }
