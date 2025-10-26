@@ -1,6 +1,8 @@
+/* styles/globals.css (or app/globals.css if you use both) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* pages-wide tweaks */
-html, body { height: 100%; }
+html, body {
+  @apply bg-gray-50 text-gray-900;
+}

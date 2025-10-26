@@ -13,7 +13,7 @@ type Item = {
 
 const NAV: Item[] = [
   { href: "/profile", label: "My Profile", icon: User },
-  { href: "/answers", label: "My Answers", icon: FileText },
+  { href: "/my-answers", label: "My Answers", icon: FileText },
   { href: "/hot-topics", label: "Hot Topics", icon: Flame },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
