@@ -2,5 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* pages-wide tweaks */
-html, body { height: 100%; }
+/* Light by default */
+:root { color-scheme: light; }
+
+html, body {
+  @apply bg-white text-gray-900;
+}
+
+/* Reset common container defaults */
+* {
+  box-sizing: border-box;
+}
