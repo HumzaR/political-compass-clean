@@ -1,55 +1,53 @@
-// src/components/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { User, FileText, Flame, Settings } from "lucide-react";
+import clsx from "clsx";
 
 type Item = {
-  href: string;
   label: string;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
 };
 
 const NAV: Item[] = [
-  { href: "/profile", label: "My Profile", icon: User },
-  { href: "/my-answers", label: "My Answers", icon: FileText },
-  { href: "/hot-topics", label: "Hot Topics", icon: Flame },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { label: "My Profile", href: "/profile",     icon: User },
+  { label: "My Answers", href: "/my-answers",  icon: FileText }, // <-- correct route
+  { label: "Hot Topics", href: "/hot-topics",  icon: Flame },
+  { label: "Settings",   href: "/settings",    icon: Settings },
 ];
 
 export default function Sidebar() {
-  const [path, setPath] = useState<string>("/");
-  useEffect(() => {
-    if (typeof window !== "undefined") setPath(window.location.pathname);
-  }, []);
+  const pathname = usePathname();
 
   return (
-    <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-950/70 backdrop-blur min-h-screen flex flex-col">
-      <div className="px-5 pt-5 pb-3">
-        <div className="text-lg font-semibold leading-tight">Political Compass</div>
-        <div className="text-xs text-neutral-500 mt-1">find your footing</div>
+    <aside className="w-60 shrink-0 border-r bg-white">
+      <div className="px-4 py-5">
+        <h1 className="text-lg font-semibold">Political Compass</h1>
+        <p className="text-xs text-gray-500">find your footing</p>
       </div>
 
       <nav className="px-2 pb-4 space-y-1">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = path === href || (href !== "/" && path.startsWith(href));
-          const base =
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors";
-          const inactive =
-            "text-neutral-700 hover:text-neutral-900 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:text-white dark:hover:bg-neutral-900";
-          const activeCls =
-            "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white";
+        {NAV.map(({ label, href, icon: Icon }) => {
+          const active = pathname === href;
           return (
-            <Link key={href} href={href} className={`${base} ${active ? activeCls : inactive}`}>
-              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+            <Link
+              key={href}
+              href={href}
+              className={clsx(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition",
+                active ? "bg-violet-50 text-violet-700" : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              <Icon className="h-5 w-5" />
               <span>{label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="mt-auto px-5 py-4 text-xs text-neutral-400">v0.1 · MVP</div>
+      <div className="px-4 py-2 text-xs text-gray-400">v0.1 · MVP</div>
     </aside>
   );
 }
