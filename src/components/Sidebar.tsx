@@ -1,36 +1,56 @@
 // src/components/Sidebar.tsx
+"use client";
+
 import Link from "next/link";
-import { useRouter } from "next/router";
-import { Home, ListChecks, BarChartHorizontal } from "lucide-react"; // pick any icons you like
+import { usePathname } from "next/navigation";
+import {
+  Home,
+  ListChecks,
+  BarChartHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import clsx from "clsx";
 
-const NAV = [
-  { href: "/", label: "Home", Icon: Home },
-  { href: "/my-answers", label: "My Answers", Icon: ListChecks },
-  { href: "/results", label: "Results", Icon: BarChartHorizontal },
+type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { label: "Home", href: "/", icon: Home },
+  { label: "My Answers", href: "/my-answers", icon: ListChecks },
+  { label: "Results", href: "/results", icon: BarChartHorizontal },
 ];
 
 export default function Sidebar() {
-  const router = useRouter();
+  const pathname = usePathname() ?? "/";
+
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+
   return (
-    <aside className="hidden md:flex md:w-64 border-r border-gray-200 bg-white">
-      <nav className="w-full p-4 space-y-1">
-        {NAV.map(({ href, label, Icon }) => {
-          const active = router.pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm",
-                active ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"
-              )}
-            >
-              <Icon className="shrink-0" size={18} />
-              <span>{label}</span>
-            </Link>
-          );
-        })}
+    <aside className="w-56 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 min-h-screen p-4">
+      <nav>
+        <ul className="space-y-1">
+          {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
+            <li key={href}>
+              <Link
+                href={href}
+                className={clsx(
+                  "flex items-center gap-3 rounded-xl px-3 py-2 transition-colors",
+                  "hover:bg-gray-100 dark:hover:bg-gray-800",
+                  isActive(href)
+                    ? "bg-blue-50 text-blue-700 dark:bg-gray-800 dark:text-blue-400"
+                    : "text-gray-700 dark:text-gray-300"
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-sm font-medium">{label}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </nav>
     </aside>
   );
