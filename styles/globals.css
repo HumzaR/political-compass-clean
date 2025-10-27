@@ -1,15 +1,17 @@
+/* styles/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Light by default */
-:root { color-scheme: light; }
-
-html, body {
-  @apply bg-white text-gray-900;
+/* Force light appearance by default */
+:root {
+  color-scheme: light;
 }
 
-/* Reset common container defaults */
-* {
-  box-sizing: border-box;
+html, body, #__next {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-gray-900;
 }
