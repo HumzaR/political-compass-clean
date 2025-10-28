@@ -3,54 +3,54 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import clsx from "clsx";
 import {
   Home,
   ListChecks,
   BarChartHorizontal,
+  Flame,
+  Settings,
+  User,
   type LucideIcon,
 } from "lucide-react";
-import clsx from "clsx";
 
-type NavItem = {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-};
+type NavItem = { label: string; href: string; icon: LucideIcon };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Home", href: "/", icon: Home },
-  { label: "My Answers", href: "/my-answers", icon: ListChecks },
-  { label: "Results", href: "/results", icon: BarChartHorizontal },
+  { label: "Home",        href: "/",           icon: Home },
+  { label: "My Answers",  href: "/my-answers", icon: ListChecks },
+  { label: "Results",     href: "/results",    icon: BarChartHorizontal },
+  { label: "Hot Topics",  href: "/hot-topics", icon: Flame },
+  { label: "Settings",    href: "/settings",   icon: Settings },
+  { label: "My Profile",  href: "/profile",    icon: User },
 ];
 
 export default function Sidebar() {
-  const pathname = usePathname() ?? "/";
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const pathname = usePathname() || "/";
 
   return (
-    <aside className="w-56 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 min-h-screen p-4">
-      <nav>
-        <ul className="space-y-1">
-          {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
-            <li key={href}>
-              <Link
-                href={href}
-                className={clsx(
-                  "flex items-center gap-3 rounded-xl px-3 py-2 transition-colors",
-                  "hover:bg-gray-100 dark:hover:bg-gray-800",
-                  isActive(href)
-                    ? "bg-blue-50 text-blue-700 dark:bg-gray-800 dark:text-blue-400"
-                    : "text-gray-700 dark:text-gray-300"
-                )}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="text-sm font-medium">{label}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+    <aside className="w-60 shrink-0 border-r bg-white text-gray-900">
+      <div className="px-4 py-3 text-base font-semibold">Political Compass</div>
+
+      <nav className="px-2 pb-4 space-y-1">
+        {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={clsx(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition",
+                active
+                  ? "bg-indigo-50 text-indigo-700"
+                  : "text-gray-700 hover:bg-gray-50"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );
