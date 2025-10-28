@@ -1,67 +1,61 @@
 // src/lib/scoring.ts
-export type AxisScores = { economic: number; social: number };
+import type { Question } from "./questions";
+import type { AnswersMap } from "./answers";
 
-// Clamp to [-100, 100]
-const clamp = (n: number) => Math.max(-100, Math.min(100, n));
+// Keep your existing computeAxisScores here…
 
-/**
- * Best-effort scoring:
- * - If answers already contain 'economic'/'social', use those (assumed -100..100).
- * - Otherwise, compute a rough score by averaging any numeric answers tagged with axis-like keys.
- *   This lets the page render even if your old question mapping isn’t wired yet.
- */
-export function computeAxisScores(answers: Record<string, any>): AxisScores {
-  if (!answers || typeof answers !== "object") return { economic: 0, social: 0 };
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const normAnswer = (v: number) => clamp(v ?? 0, -2, 2);
 
-  // 1) Direct values present?
-  const directE = Number.isFinite(+answers.economic) ? clamp(+answers.economic) : null;
-  const directS = Number.isFinite(+answers.social) ? clamp(+answers.social) : null;
-  if (directE !== null && directS !== null) return { economic: directE, social: directS };
-
-  // 2) Heuristic: average numeric answers whose key contains axis hints
-  let econVals: number[] = [];
-  let socVals: number[] = [];
-
-  Object.entries(answers).forEach(([k, v]) => {
-    const val = typeof v === "string" ? parseFloat(v) : v;
-    if (!Number.isFinite(val)) return;
-
-    const key = k.toLowerCase();
-    if (key.includes("econ") || key.includes("tax") || key.includes("market")) {
-      econVals.push(val);
-    }
-    if (key.includes("soc") || key.includes("civil") || key.includes("freedom") || key.includes("authority")) {
-      socVals.push(val);
-    }
-  });
-
-  const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-  // Scale assumed -1..+1 inputs to -100..+100
-  const toPct = (x: number) => clamp(Math.round(x * 100));
-
-  return {
-    economic: directE ?? toPct(avg(econVals)),
-    social: directS ?? toPct(avg(socVals)),
-  };
+function influenceFor(q: Question, answer: number): number {
+  const w = Number.isFinite(q.weight!) ? (q.weight as number) : 1;
+  const dir = Number.isFinite(q.direction!) ? (q.direction as number) : 1;
+  const val = normAnswer(answer) * dir;
+  const impact = Math.abs(val * w);
+  return Number.isFinite(impact) ? impact : 0;
 }
 
-export function summarizeQuadrant(scores: AxisScores): string {
-  const { economic, social } = scores;
-  const econLabel = economic >= 0 ? "Market" : "Equality";
-  const socLabel = social >= 0 ? "Libertarian" : "Authoritarian";
-  return `${socLabel} • ${econLabel}`;
-}
+export function topDrivers(
+  answers: AnswersMap,
+  questions: Question[],
+  limit = 5
+) {
+  const rows = questions
+    .filter((q) => answers[q.id] !== undefined)
+    .map((q) => ({
+      id: q.id,
+      text: q.text,
+      axis: q.axis,
+      influence: influenceFor(q, Number(answers[q.id])),
+    }))
+    .sort((a, b) => b.influence - a.influence)
+    .slice(0, limit);
 
-export function topDrivers(answers: Record<string, any>): Array<{ key: string; impact: number }> {
-  if (!answers) return [];
-  // Pick the top 5 numeric answers by absolute magnitude (heuristic).
-  const rows = Object.entries(answers)
-    .filter(([, v]) => Number.isFinite(typeof v === "string" ? parseFloat(v) : v))
-    .map(([k, v]) => {
-      const n = typeof v === "string" ? parseFloat(v) : (v as number);
-      return { key: k, impact: Math.abs(n) };
-    })
-    .sort((a, b) => b.impact - a.impact)
-    .slice(0, 5);
   return rows;
+}
+
+// Optional: very simple contradictions heuristic (works if your questions have tags)
+// Improve/replace with your previous rule-set when ready.
+export function findContradictions(
+  answers: AnswersMap,
+  questions: Question[]
+): string[] {
+  // Example heuristic: if the same tag appears on questions answered with strong opposite signs
+  // you might be inconsistent on that theme.
+  const BY_TAG: Record<string, number[]> = {};
+  for (const q of questions) {
+    const v = answers[q.id];
+    if (v === undefined || !q.tags?.length) continue;
+    for (const t of q.tags) {
+      (BY_TAG[t] ??= []).push(Number(v));
+    }
+  }
+  const msgs: string[] = [];
+  for (const [tag, vals] of Object.entries(BY_TAG)) {
+    if (vals.length < 2) continue;
+    const hasPos = vals.some((v) => v >= 1.5);
+    const hasNeg = vals.some((v) => v <= -1.5);
+    if (hasPos && hasNeg) msgs.push(`Possible tension on “${tag}”.`);
+  }
+  return msgs;
 }
