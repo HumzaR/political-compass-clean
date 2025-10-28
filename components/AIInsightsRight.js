@@ -1,13 +1,13 @@
 // components/AIInsightsRight.js
 import React from "react";
-import { useAnswers } from "@/lib/answers";           // your context
-import { computeScores, topDrivers } from "@/lib/scoring"; // your scoring utils
+import { useAnswers } from "@/lib/answers";
+import { computeAxisScores, topDrivers } from "@/lib/scoring";
 
 export default function AIInsightsRight() {
   const { answers } = useAnswers() || { answers: {} };
   const answeredCount = answers ? Object.keys(answers).length : 0;
 
-  // If no answers at all, keep the CTA
+  // Show CTA if there are no answers at all
   if (!answeredCount) {
     return (
       <aside className="p-4 rounded-2xl border border-gray-200 bg-white">
@@ -19,25 +19,27 @@ export default function AIInsightsRight() {
     );
   }
 
-  // Fallback: compute from local answers
-  const scores = computeScores(answers); // whatever your function returns
-  const drivers = topDrivers ? topDrivers(answers) : [];
+  // Use the function that actually exists in lib/scoring
+  const axis = computeAxisScores(answers); // { economic: number, social: number, ... }
+  const drivers = typeof topDrivers === "function" ? topDrivers(answers) : [];
 
   const lines = [];
-  if (scores?.economic != null) {
+
+  if (axis?.economic != null) {
     lines.push(
-      scores.economic > 0
+      axis.economic > 0
         ? "You lean economically liberal."
-        : scores.economic < 0
+        : axis.economic < 0
         ? "You lean economically conservative."
         : "You’re balanced on economic questions."
     );
   }
-  if (scores?.social != null) {
+
+  if (axis?.social != null) {
     lines.push(
-      scores.social > 0
+      axis.social > 0
         ? "You lean socially progressive."
-        : scores.social < 0
+        : axis.social < 0
         ? "You lean socially traditional."
         : "You’re balanced on social questions."
     );
@@ -45,7 +47,10 @@ export default function AIInsightsRight() {
 
   const driverLine =
     drivers && drivers.length
-      ? `Top drivers: ${drivers.slice(0, 3).map(d => d.label || d.key).join(", ")}.`
+      ? `Top drivers: ${drivers
+          .slice(0, 3)
+          .map((d) => d.label || d.key)
+          .join(", ")}.`
       : "";
 
   const summary = [lines.join(" "), driverLine].filter(Boolean).join(" ");
