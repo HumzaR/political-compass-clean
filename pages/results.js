@@ -2,6 +2,7 @@
 import Head from "next/head";
 import { useAnswers } from "@/lib/answers";
 import { computeAxisScores, summarizeQuadrant, topDrivers } from "@/lib/scoring";
+import { QUESTIONS } from "@/lib/questions";
 
 export async function getServerSideProps() {
   return { props: {} };
@@ -31,10 +32,11 @@ function AxisBar({ label, value }) {
 }
 
 export default function ResultsPage() {
-  const { answers } = useAnswers();
-  const scores = computeAxisScores(answers);
-  const quadrant = summarizeQuadrant(scores);
-  const drivers = topDrivers(answers);
+const { answers } = useAnswers();
+// pass the QUESTIONS array to the scoring helpers
+const scores = computeAxisScores(answers, QUESTIONS);
+const quadrant = summarizeQuadrant(scores);
+const drivers = topDrivers(answers, QUESTIONS);
 
   return (
     <>
