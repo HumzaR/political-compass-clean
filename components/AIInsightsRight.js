@@ -4,11 +4,19 @@ import { useAnswers } from "@/lib/answers";
 import { computeAxisScores, topDrivers } from "@/lib/scoring";
 
 export default function AIInsightsRight() {
-  const { answers } = useAnswers() || { answers: {} };
+  const { answers, ready } = useAnswers();
   const answeredCount = answers ? Object.keys(answers).length : 0;
 
-  // Show CTA if there are no answers at all
-  if (!answeredCount) {
+  if (!ready) {
+    return (
+      <aside className="p-4 rounded-2xl border border-gray-200 bg-white">
+        <h3 className="font-semibold mb-2">AI Insights</h3>
+        <p className="text-sm text-gray-600">Loading your insights…</p>
+      </aside>
+    );
+  }
+
+  if (answeredCount === 0) {
     return (
       <aside className="p-4 rounded-2xl border border-gray-200 bg-white">
         <h3 className="font-semibold mb-2">AI Insights</h3>
@@ -19,12 +27,10 @@ export default function AIInsightsRight() {
     );
   }
 
-  // Use the function that actually exists in lib/scoring
-  const axis = computeAxisScores(answers); // { economic: number, social: number, ... }
+  const axis = computeAxisScores(answers);
   const drivers = typeof topDrivers === "function" ? topDrivers(answers) : [];
 
   const lines = [];
-
   if (axis?.economic != null) {
     lines.push(
       axis.economic > 0
@@ -34,7 +40,6 @@ export default function AIInsightsRight() {
         : "You’re balanced on economic questions."
     );
   }
-
   if (axis?.social != null) {
     lines.push(
       axis.social > 0
@@ -47,10 +52,7 @@ export default function AIInsightsRight() {
 
   const driverLine =
     drivers && drivers.length
-      ? `Top drivers: ${drivers
-          .slice(0, 3)
-          .map((d) => d.label || d.key)
-          .join(", ")}.`
+      ? `Top drivers: ${drivers.slice(0, 3).map((d) => d.label || d.key).join(", ")}.`
       : "";
 
   const summary = [lines.join(" "), driverLine].filter(Boolean).join(" ");
@@ -62,7 +64,7 @@ export default function AIInsightsRight() {
         {summary || "We’ve analyzed your current answers — keep going for a richer summary."}
       </p>
       <p className="mt-2 text-xs text-gray-500">
-        (This is a local summary. A richer, AI-generated write-up will appear when server insights are enabled.)
+        (A fuller AI summary & contradictions will reappear when server insights are re-enabled.)
       </p>
     </aside>
   );
