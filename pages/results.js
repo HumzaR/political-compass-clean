@@ -3,6 +3,10 @@ import Head from "next/head";
 import { useAnswers } from "@/lib/answers";
 import { computeAxisScores, summarizeQuadrant, topDrivers } from "@/lib/scoring";
 
+export async function getServerSideProps() {
+  return { props: {} };
+}
+
 function AxisBar({ label, value }) {
   const pct = Math.max(-100, Math.min(100, Number(value || 0)));
   const left = pct < 0 ? Math.abs(pct) : 0;
