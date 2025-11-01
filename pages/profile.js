@@ -11,6 +11,8 @@ import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
+import PartyMatch from "@/components/PartyMatch";
+
 
 // ✅ NEW: single source for answers
 import { loadAnswers, subscribeAnswers } from "../lib/answers";
@@ -370,6 +372,12 @@ function ProfileInner() {
           }}
         />
       </div>
+
+      {/* Party match section */}
+<div className="mt-6">
+  <PartyMatch />
+</div>
+
 
       {/* Followers Modal */}
       <Modal title="Followers" isOpen={followersOpen} onClose={closeFollowers}>
