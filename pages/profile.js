@@ -12,6 +12,11 @@ import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
 import PartyMatch from "@/components/PartyMatch";
+import Head from "next/head";
+import Link from "next/link";
+import { useAnswers } from "@/lib/answers";
+import AIInsightsRight from "@/components/AIInsightsRight";
+
 
 
 // ✅ NEW: single source for answers
