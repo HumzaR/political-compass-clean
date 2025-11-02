@@ -11,17 +11,9 @@ import Modal from "../components/Modal";
 import QuadRadar from "../components/QuadRadar";
 import AxisCard from "../components/AxisCard";
 import CompassCanvas from "../components/CompassCanvas";
-import PartyMatch from "@/components/PartyMatch";
-import Head from "next/head";
-import Link from "next/link";
-import { useAnswers } from "@/lib/answers";
-import AIInsightsRight from "@/components/AIInsightsRight";
-
-
-
-// ✅ NEW: single source for answers
 import { loadAnswers, subscribeAnswers } from "../lib/answers";
 
+// Use ONLY the dynamic import for the AI right rail (no additional import elsewhere)
 const AIInsightsRight = dynamic(() => import("../components/AIInsightsRight"), { ssr: false });
 
 function ProfileInner() {
@@ -39,7 +31,7 @@ function ProfileInner() {
   const [profile, setProfile] = useState(null);
   const [result, setResult] = useState(null);
 
-  // ✅ Answers come from /answers/{uid} (with fallback handled inside lib/answers)
+  // Answers single-source (Firestore /answers/{uid})
   const [answersById, setAnswersById] = useState({});
 
   const [followersCount, setFollowersCount] = useState(0);
@@ -51,7 +43,7 @@ function ProfileInner() {
   const [followingLoading, setFollowingLoading] = useState(false);
   const [followingList, setFollowingList] = useState([]);
 
-  // Load profile + latest result meta (scores/hot deltas) and start answers subscription
+  // Load profile + latest result + subscribe to answers
   useEffect(() => {
     const load = async () => {
       if (!user) return;
@@ -75,7 +67,6 @@ function ProfileInner() {
         const followingQ = query(collection(db, "follows"), where("followerUid", "==", user.uid));
         setFollowingCount((await getDocs(followingQ)).size);
 
-        // ✅ answers: single source (Firestore /answers/{uid}, with internal fallback)
         const first = await loadAnswers();
         setAnswersById(first);
         const unsub = subscribeAnswers((a) => setAnswersById(a || {}));
@@ -89,9 +80,7 @@ function ProfileInner() {
     };
     if (user) {
       const maybeUnsub = load();
-      return () => {
-        if (typeof maybeUnsub === "function") maybeUnsub();
-      };
+      return () => { if (typeof maybeUnsub === "function") maybeUnsub(); };
     }
   }, [user, router]);
 
@@ -142,7 +131,7 @@ function ProfileInner() {
   const dE = Number(profile?.hotEconDelta || 0);
   const dS = Number(profile?.hotSocDelta || 0);
 
-  // Base scores from latest result (kept as-is)
+  // Base scores from latest result
   const econBase = Number(result?.economicScore);
   const socBase  = Number(result?.socialScore);
   const globBase = Number(result?.globalScore);
@@ -158,10 +147,9 @@ function ProfileInner() {
   const glob = hasG ? globBase : null;
   const prog = hasP ? progBase : null;
 
-  const hasAny = hasE || hasS || hasG || hasP;
   const hasAdvanced = hasG || hasP;
 
-  // Contributions derived from single-source answers
+  // Contributions derived from answers
   const contributions = useMemo(() => {
     const ans = answersById || {};
     const make = (axis) =>
@@ -182,28 +170,12 @@ function ProfileInner() {
     };
   }, [answersById]);
 
-  const fmt2 = (n) => (Number.isFinite(Number(n)) ? Number(n).toFixed(2) : "—");
   const palette = {
     economic: { bg: "#DBEAFE", bar: "#BFDBFE", dot: "#3B82F6" },
     social:   { bg: "#EDE9FE", bar: "#DDD6FE", dot: "#8B5CF6" },
     global:   { bg: "#DCFCE7", bar: "#BBF7D0", dot: "#22C55E" },
     progress: { bg: "#FFEDD5", bar: "#FED7AA", dot: "#F97316" },
   };
-
-  const compassAnswers = useMemo(() => {
-    const ans = answersById || {};
-    return questions.map((q) => {
-      const raw = ans[q.id];
-      const has = Number.isFinite(Number(raw));
-      const v = has ? Number(raw) : null;
-      const label = !has
-        ? "Not answered"
-        : (q.type === "yesno"
-            ? (v >= 3 ? "Yes" : "No")
-            : ({1:"Strongly Disagree",2:"Disagree",3:"Neutral",4:"Agree",5:"Strongly Agree"}[v] || String(v)));
-      return { id: `compass-${q.id}`, text: q.text, axis: q.axis, value: v, label, has };
-    });
-  }, [answersById]);
 
   if (user === undefined || loadingProfile) return <p className="text-center mt-10">Loading your profile…</p>;
   if (user === null) return null;
@@ -229,11 +201,25 @@ function ProfileInner() {
 
       {/* Tabs */}
       <div className="flex gap-2 mt-6 mb-6">
-        <button onClick={() => setActiveTab("overview")} className={["px-4 py-2 rounded", activeTab === "overview" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Overview</button>
-        <button onClick={() => setActiveTab("answers")} className={["px-4 py-2 rounded", activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"].join(" ")}>Your answers</button>
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={`px-4 py-2 rounded ${activeTab === "overview" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"}`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab("answers")}
+          className={`px-4 py-2 rounded ${activeTab === "answers" ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-800"}`}
+        >
+          Your answers
+        </button>
+        {/* New: Party match navigates to its own page */}
+        <Link href="/party-match" className="px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300">
+          Party match
+        </Link>
       </div>
 
-      {/* Grid: left content + AI right rail (unchanged) */}
+      {/* Grid: left content + AI right rail */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr,20rem] gap-6 items-start">
         <div>
           {activeTab === "overview" ? (
@@ -243,13 +229,13 @@ function ProfileInner() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setMode("split")}
-                    className={`px-3 py-1.5 rounded border ${mode==="split"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                    className={`px-3 py-1.5 rounded border ${mode === "split" ? "bg-indigo-600 text-white border-indigo-600" : "bg-white hover:bg-gray-50"}`}
                   >
                     Split (4 graphs)
                   </button>
                   <button
                     onClick={() => setMode("spider")}
-                    className={`px-3 py-1.5 rounded border ${mode==="spider"?"bg-indigo-600 text-white border-indigo-600":"bg-white hover:bg-gray-50"}`}
+                    className={`px-3 py-1.5 rounded border ${mode === "spider" ? "bg-indigo-600 text-white border-indigo-600" : "bg-white hover:bg-gray-50"}`}
                   >
                     Combined (spider)
                   </button>
@@ -260,7 +246,10 @@ function ProfileInner() {
               <div className="mb-6">
                 <div className="text-sm text-gray-700 font-medium mb-2">Compass (Economic vs Social)</div>
                 {econ === null || soc === null ? (
-                  <p className="text-gray-600">No quiz result yet. <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.</p>
+                  <p className="text-gray-600">
+                    No quiz result yet.{" "}
+                    <Link href="/quiz" className="text-indigo-600 underline">Take the quiz</Link>.
+                  </p>
                 ) : (
                   <CompassCanvas econ={econ} soc={soc} />
                 )}
@@ -325,7 +314,10 @@ function ProfileInner() {
                         To unlock <strong>Global vs National</strong> and <strong>Progressive vs Conservative</strong> (with explanations),
                         continue with the <strong>advanced 20 questions</strong>.
                       </p>
-                      <a href="/quiz?start=advanced" className="inline-block mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+                      <a
+                        href="/quiz?start=advanced"
+                        className="inline-block mt-3 px-5 py-2 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700"
+                      >
                         Continue with the last 20 questions
                       </a>
                     </div>
@@ -377,12 +369,6 @@ function ProfileInner() {
           }}
         />
       </div>
-
-      {/* Party match section */}
-<div className="mt-6">
-  <PartyMatch />
-</div>
-
 
       {/* Followers Modal */}
       <Modal title="Followers" isOpen={followersOpen} onClose={closeFollowers}>
