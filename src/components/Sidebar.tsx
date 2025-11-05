@@ -18,11 +18,11 @@ type NavItem = { label: string; href: string; icon: LucideIcon };
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Home",        href: "/",           icon: Home },
+  { label: "My Profile",  href: "/profile",    icon: User },
   { label: "My Answers",  href: "/my-answers", icon: ListChecks },
-  { label: "Results",     href: "/results",    icon: BarChartHorizontal },
   { label: "Hot Topics",  href: "/hot-topics", icon: Flame },
   { label: "Settings",    href: "/settings",   icon: Settings },
-  { label: "My Profile",  href: "/profile",    icon: User },
+  
 ];
 
 export default function Sidebar() {

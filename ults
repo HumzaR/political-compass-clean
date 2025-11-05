@@ -1,0 +1,14 @@
+[35mlib/answers.js[m[36m:[m//   2) If missing, latest [1;31m/results[m where uid==uid with answers
+[35mpages/results.js[m[36m:[m// pages[1;31m/results[m.js
+[35mscripts/backfillResults.js[m[36m:[m// Recompute axis scores from a user's answers and backfill into [1;31m/results[m + /profiles.
+[35mscripts/backfillResults.js[m[36m:[m// 2) [1;31m/results[m/{profile.lastResultId}.answers
+[35mscripts/backfillResults.js[m[36m:[m// 3) query [1;31m/results[m where uid == <uid> order by createdAt desc -> answers
+[35mscripts/backfillResults.js[m[36m:[m  // 2) [1;31m/results[m/{profile.lastResultId}
+[35mscripts/backfillResults.js[m[36m:[m        return { byId: r.answers, source: `[1;31m/results[m/${lastId}` };
+[35mscripts/backfillResults.js[m[36m:[m  // 3) latest [1;31m/results[m where uid==uid
+[35mscripts/backfillResults.js[m[36m:[m      return { byId: d.answers, source: `[1;31m/results[m?uid=${uid}&latest` };
+[35mscripts/backfillResults.mjs[m[36m:[m  // 2) [1;31m/results[m/{profile.lastResultId}
+[35mscripts/backfillResults.mjs[m[36m:[m        return { byId: r.answers, source: `[1;31m/results[m/${lastId}` };
+[35mscripts/backfillResults.mjs[m[36m:[m  // 3) latest [1;31m/results[m where uid==uid (with index); fallback to unordered if missing
+[35mscripts/backfillResults.mjs[m[36m:[m        return { byId: d.answers, source: `[1;31m/results[m?uid=${uid}&latest` };
+[35mscripts/backfillResults.mjs[m[36m:[m          return { byId: d.answers, source: `[1;31m/results[m?uid=${uid}&any` };
