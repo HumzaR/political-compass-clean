@@ -69,8 +69,8 @@ export default function QuizPage() {
 
   const onSubmit = async () => {
     // Nothing special to do; answers already saved incrementally.
-    // Just send the user to results.
-    router.push("/results");
+    // Just send the user to profile.
+    router.push("/profile");
   };
 
   const currentAnswer = answers[q.id];
