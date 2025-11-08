@@ -2,45 +2,54 @@
 import "../styles/globals.css";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import Sidebar from "@/components/Sidebar";
 
-// Ensure Firebase is initialized (side-effect import)
+// Ensure Firebase side-effect init (config in lib/firebase)
 import "@/lib/firebase";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 
+// Global providers your pages rely on
+import { AnswersProvider } from "@/lib/answers";
+
+// Sidebar (shown only when logged in)
+import Sidebar from "@/components/Sidebar";
+
+// Light theme as default (requires next-themes)
+import { ThemeProvider } from "next-themes";
+
 export default function MyApp({ Component, pageProps }) {
   const router = useRouter();
-  const [user, setUser] = useState(undefined); // undefined = loading, null = signed out, object = signed in
+  const [user, setUser] = useState(undefined); // undefined = loading
 
   useEffect(() => {
-    const auth = getAuth();
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    const unsub = onAuthStateChanged(getAuth(), (u) => setUser(u));
     return () => unsub();
   }, []);
 
-  // If logged in and on Home (/), redirect to /feed
+  // Redirect signed-in users from "/" -> "/feed"
   useEffect(() => {
-    if (user === undefined) return; // still checking auth
-    if (user && router.pathname === "/") {
-      router.replace("/feed");
-    }
+    if (user === undefined) return;
+    if (user && router.pathname === "/") router.replace("/feed");
   }, [user, router]);
 
-  // Avoid flicker while we determine auth
+  // Avoid flicker during initial auth check
   if (user === undefined) return null;
 
-  // Show Sidebar only when logged in
-  return (
-    <div className="min-h-screen w-full flex bg-white dark:bg-gray-950">
-      {user ? (
-        <div className="hidden md:block">
-          <Sidebar />
-        </div>
-      ) : null}
+  const showSidebar = !!user;
 
-      <main className="flex-1">
-        <Component {...pageProps} />
-      </main>
-    </div>
+  return (
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+      <AnswersProvider>
+        <div className="min-h-screen w-full flex">
+          {showSidebar ? (
+            <div className="hidden md:block">
+              <Sidebar />
+            </div>
+          ) : null}
+          <main className="flex-1">
+            <Component {...pageProps} />
+          </main>
+        </div>
+      </AnswersProvider>
+    </ThemeProvider>
   );
 }
