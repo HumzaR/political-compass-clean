@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 // Ensure Firebase side-effect init (config in lib/firebase)
-import "@/lib/firebase";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 // Global providers your pages rely on
 import { AnswersProvider } from "@/lib/answers";
@@ -21,7 +22,7 @@ export default function MyApp({ Component, pageProps }) {
   const [user, setUser] = useState(undefined); // undefined = loading
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(getAuth(), (u) => setUser(u));
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 

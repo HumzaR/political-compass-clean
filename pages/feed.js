@@ -3,10 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import "@/lib/firebase";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
-  getFirestore,
   collection,
   query,
   where,
@@ -25,7 +24,6 @@ import { fetchUnansweredHotTopics, answerHotTopic } from "@/lib/hotTopics";
 // Helpers to fetch feed data (very lightweight, no pagination)
 // -----------------------------------------------------------
 
-const db = getFirestore();
 
 // Get IDs the current user follows
 async function fetchFollowees(uid) {
@@ -102,7 +100,7 @@ export default function FeedPage() {
   // Auth bootstrap
   // -----------------
   useEffect(() => {
-    const unsub = onAuthStateChanged(getAuth(), (u) => setUser(u));
+    const unsub = onAuthStateChanged(auth(), (u) => setUser(u));
     return () => unsub();
   }, []);
 
@@ -160,7 +158,7 @@ export default function FeedPage() {
   // -----------------
   useEffect(() => {
     async function loadHotTopics() {
-      const u = getAuth().currentUser;
+      const u = auth.currentUser;
       if (!u) return;
       const topics = await fetchUnansweredHotTopics(u.uid);
       setPendingTopics(topics);
