@@ -1,0 +1,155 @@
+openapi: 3.1.0
+info:
+  title: Debate Platform MVP API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/debates:
+    post:
+      summary: Create debate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, motionText, format, domain]
+              properties:
+                title: { type: string }
+                motionText: { type: string }
+                format: { type: string, enum: [short, long] }
+                domain: { type: string, enum: [politics, sports, general] }
+      responses:
+        '201':
+          description: Debate created
+
+  /v1/debates/{debateId}/live/session:
+    post:
+      summary: Create live room/token with provider adapter
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Session created
+
+  /v1/debates/{debateId}/start:
+    post:
+      summary: Mark debate live and start transcript ingestion
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Started }
+
+  /v1/debates/{debateId}/rounds/{roundId}/close:
+    post:
+      summary: Close round and compute round score
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: roundId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Round closed }
+
+  /v1/debates/{debateId}/end:
+    post:
+      summary: End debate and queue final scoring
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Ended }
+
+  /v1/debates/{debateId}/transcript/segments:
+    post:
+      summary: Ingest transcript chunks from live provider/webhook
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [segments]
+              properties:
+                segments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      speakerUserId: { type: string }
+                      startMs: { type: integer }
+                      endMs: { type: integer }
+                      text: { type: string }
+                      confidence: { type: number }
+      responses:
+        '202': { description: Accepted }
+
+  /v1/debates/{debateId}/score/final:
+    post:
+      summary: Compute/publish final score
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Final score computed }
+
+  /v1/debates/{debateId}/scorecard:
+    get:
+      summary: Get explainable scorecard
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Scorecard payload
+
+  /v1/uploads/debate-media:
+    post:
+      summary: Create upload session and return signed URL
+      responses:
+        '200':
+          description: Signed upload target
+
+  /v1/debates/{debateId}/process-upload:
+    post:
+      summary: Process uploaded media (ASR + scoring)
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Processing started }
+
+  /v1/debates/{debateId}/share-card:
+    post:
+      summary: Generate shareable debate result card
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Share card created }
