@@ -1,31 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
-const buttonStyle = {
-  border: "1px solid #ddd",
-  padding: "8px 12px",
-  borderRadius: 8,
-  background: "#fff",
-  cursor: "pointer",
-};
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
 
 export default function DebateWorkspacePage() {
   const router = useRouter();
   const { debateId } = router.query;
+
+  const [user, setUser] = useState(undefined);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
   const [workspace, setWorkspace] = useState(null);
   const [scorecard, setScorecard] = useState(null);
-  const [segmentSpeaker, setSegmentSpeaker] = useState("speakerA");
-  const [segmentText, setSegmentText] = useState("");
+
   const [roundIdInput, setRoundIdInput] = useState("");
-  const [speakersInput, setSpeakersInput] = useState(
+  const [speakersJson, setSpeakersJson] = useState(
     JSON.stringify(
       {
         speakerA: {
           dimensions: {
             argumentQuality: 70,
-            factualAccuracy: 70,
-            rebuttalEffectiveness: 70,
-            rhetoricDelivery: 70,
+            factualAccuracy: 65,
+            rebuttalEffectiveness: 60,
+            rhetoricDelivery: 66,
+            topicConsistency: 72,
+          },
+          penalties: 0,
+          bonuses: 0,
+        },
+        speakerB: {
+          dimensions: {
+            argumentQuality: 68,
+            factualAccuracy: 67,
+            rebuttalEffectiveness: 62,
+            rhetoricDelivery: 64,
             topicConsistency: 70,
           },
           penalties: 0,
@@ -36,290 +54,258 @@ export default function DebateWorkspacePage() {
       2
     )
   );
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
 
-  const loadWorkspace = async () => {
+  const [speakerUserId, setSpeakerUserId] = useState("");
+  const [segmentText, setSegmentText] = useState("");
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
+    return () => unsub();
+  }, []);
+
+  const firstOpenRoundId = useMemo(() => {
+    const rounds = workspace?.debate?.rounds || [];
+    const openRound = rounds.find((r) => r.status !== "closed");
+    return openRound?.id || "";
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!roundIdInput && firstOpenRoundId) setRoundIdInput(firstOpenRoundId);
+  }, [firstOpenRoundId, roundIdInput]);
+
+  async function loadWorkspace() {
     if (!debateId) return;
-    setLoading(true);
-    setError("");
-    setNotice("");
     try {
-      const response = await fetch(`/api/debates/${debateId}/workspace`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to load workspace");
-      setWorkspace(payload);
+      setLoading(true);
+      setError("");
+      setNotice("");
+      const res = await fetch(`/api/debates/${debateId}/workspace`, {
+        headers: await getAuthHeaders(),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to load workspace");
+      setWorkspace(body);
       setScorecard(null);
-    } catch (err) {
-      setError(err.message || "Failed to load workspace");
+    } catch (e) {
+      setError(e.message || "Failed to load workspace");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    loadWorkspace();
-  }, [debateId]);
+    if (user && debateId) loadWorkspace();
+    else if (user === null) setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, debateId]);
 
   useEffect(() => {
-    if (workspace?.debate?.status !== "live") return;
-    const interval = setInterval(() => {
-      loadWorkspace();
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [workspace?.debate?.status, debateId]);
+    const status = workspace?.debate?.status;
+    if (status !== "live") return;
+    const id = setInterval(() => loadWorkspace(), 15000);
+    return () => clearInterval(id);
+  }, [workspace?.debate?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const transcriptPreview = useMemo(() => {
-    return (workspace?.transcriptSegments || []).slice(-8).reverse();
-  }, [workspace]);
-
-  useEffect(() => {
-    if (!workspace?.debate?.rounds?.length) return;
-    const firstOpenRound = workspace.debate.rounds.find((round) => round.status !== "closed");
-    if (firstOpenRound?.id) setRoundIdInput(firstOpenRound.id);
-  }, [workspace]);
-
-  const runAction = async (path) => {
-    if (!debateId) return;
-    setActionLoading(true);
+  async function callApi(path, method = "POST", body) {
+    setBusy(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/debates/${debateId}/${path}`, { method: "POST" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Action failed");
-      await loadWorkspace();
-    } catch (err) {
-      setError(err.message || "Action failed");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const loadScorecard = async () => {
-    if (!debateId) return;
-    setActionLoading(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch(`/api/debates/${debateId}/scorecard`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to load scorecard");
-      setScorecard(payload);
-    } catch (err) {
-      setError(err.message || "Failed to load scorecard");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const closeRound = async () => {
-    if (!debateId || !roundIdInput) return;
-    setActionLoading(true);
-    setError("");
-    setNotice("");
-    try {
-      let parsedSpeakers;
-      try {
-        parsedSpeakers = JSON.parse(speakersInput);
-      } catch {
-        throw new Error("Invalid speakers JSON. Please fix formatting before closing the round.");
-      }
-      const response = await fetch(`/api/debates/${debateId}/rounds/${roundIdInput}/close`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speakers: parsedSpeakers }),
+      const res = await fetch(path, {
+        method,
+        headers: {
+          ...(body ? { "Content-Type": "application/json" } : {}),
+          ...(await getAuthHeaders()),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to close round");
-      await loadWorkspace();
-    } catch (err) {
-      setError(err.message || "Failed to close round");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Request failed");
+      return json;
     } finally {
-      setActionLoading(false);
+      setBusy(false);
     }
-  };
+  }
 
-  const formatSpeakersJson = () => {
-    setError("");
+  async function onStart() {
     try {
-      const parsed = JSON.parse(speakersInput);
-      setSpeakersInput(JSON.stringify(parsed, null, 2));
-    } catch {
-      setError("Cannot format speakers JSON because it is invalid.");
+      await callApi(`/api/debates/${debateId}/start`, "POST");
+      setNotice("Debate started.");
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message);
     }
-  };
+  }
 
-  const addSegment = async () => {
-    if (!debateId || !segmentText.trim()) return;
-    setActionLoading(true);
-    setError("");
-    setNotice("");
+  async function onEnd() {
     try {
-      const now = Date.now();
-      const response = await fetch(`/api/debates/${debateId}/transcript/segments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          segments: [
-            {
-              speakerUserId: segmentSpeaker,
-              text: segmentText.trim(),
-              startMs: now,
-              endMs: now + 2000,
-              confidence: 0.9,
-            },
-          ],
-        }),
+      await callApi(`/api/debates/${debateId}/end`, "POST");
+      setNotice("Debate ended.");
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function onCreateLiveSession() {
+    try {
+      await callApi(`/api/debates/${debateId}/live/session`, "POST");
+      setNotice("Live session metadata created.");
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function onCloseRound() {
+    try {
+      const speakers = JSON.parse(speakersJson);
+      if (!roundIdInput) throw new Error("Round ID is required.");
+      await callApi(`/api/debates/${debateId}/rounds/${roundIdInput}/close`, "POST", { speakers });
+      setNotice("Round closed.");
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message || "Invalid speakers JSON");
+    }
+  }
+
+  async function onComputeFinal() {
+    try {
+      await callApi(`/api/debates/${debateId}/score/final`, "POST", { confidenceFactor: 1 });
+      setNotice("Final score computed.");
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function onLoadScorecard() {
+    try {
+      const res = await fetch(`/api/debates/${debateId}/scorecard`, {
+        headers: await getAuthHeaders(),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to add transcript segment");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to load scorecard");
+      setScorecard(body);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function onAddSegment() {
+    try {
+      if (!segmentText.trim()) throw new Error("Transcript text is required.");
+      await callApi(`/api/debates/${debateId}/transcript/segments`, "POST", {
+        segments: [
+          {
+            speakerUserId: speakerUserId || undefined,
+            startMs: Date.now(),
+            endMs: Date.now() + 2000,
+            text: segmentText.trim(),
+            confidence: 0.95,
+          },
+        ],
+      });
       setSegmentText("");
-      await loadWorkspace();
       setNotice("Transcript segment added.");
-    } catch (err) {
-      setError(err.message || "Failed to add transcript segment");
-    } finally {
-      setActionLoading(false);
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message);
     }
-  };
+  }
 
-  const copyToClipboard = async (value, label) => {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(String(value));
-      setNotice(`${label} copied.`);
-      setError("");
-    } catch {
-      setError(`Could not copy ${label.toLowerCase()}.`);
-    }
-  };
+  if (user === undefined) return null;
+  if (!user) return <div className="mx-auto max-w-4xl p-6">Please sign in to access debate workspace.</div>;
 
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
-      <h1>Debate Workspace</h1>
-      <p style={{ opacity: 0.75 }}>Debate ID: {debateId || "..."}</p>
+    <div className="mx-auto max-w-5xl px-4 py-8 space-y-5">
+      <h1 className="text-3xl font-semibold">Debate Workspace</h1>
+      <p className="text-gray-600">Debate ID: {debateId}</p>
 
-      {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
-      {notice ? <p style={{ color: "#047857" }}>{notice}</p> : null}
-      {loading ? <p>Loading workspace...</p> : null}
+      {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">{error}</div> : null}
+      {notice ? <div className="rounded border border-green-200 bg-green-50 p-3 text-green-700">{notice}</div> : null}
 
-      {workspace?.debate ? (
+      {loading ? (
+        <div className="text-gray-500">Loading workspace...</div>
+      ) : (
         <>
-          <section style={{ marginBottom: 24 }}>
-            <h2>{workspace.debate.title}</h2>
-            <p>{workspace.debate.motionText}</p>
-            <p>
-              Status: <strong>{workspace.debate.status}</strong> · Rounds:{" "}
-              <strong>{workspace.meta.roundCount}</strong> · Closed:{" "}
-              <strong>{workspace.meta.closedRoundCount}</strong>
-            </p>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <button style={buttonStyle} disabled={actionLoading} onClick={() => runAction("start")}>
-                Start debate
-              </button>
-              <button style={buttonStyle} disabled={actionLoading} onClick={() => runAction("end")}>
-                End debate
-              </button>
-              <button style={buttonStyle} disabled={actionLoading} onClick={() => runAction("live/session")}>
+          <div className="rounded-xl border p-4">
+            <div className="font-medium">Status: {workspace?.debate?.status}</div>
+            <div className="text-sm text-gray-600 mt-1">
+              Rounds: {workspace?.roundCount ?? 0} · Closed: {workspace?.closedRoundCount ?? 0} · Live session:{" "}
+              {workspace?.hasLiveSession ? "yes" : "no"}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button disabled={busy} onClick={onCreateLiveSession} className="rounded border px-3 py-2">
                 Create live session
               </button>
-              <button style={buttonStyle} disabled={actionLoading} onClick={() => runAction("score/final")}>
+              <button disabled={busy} onClick={onStart} className="rounded border px-3 py-2">
+                Start debate
+              </button>
+              <button disabled={busy} onClick={onEnd} className="rounded border px-3 py-2">
+                End debate
+              </button>
+              <button disabled={busy} onClick={onComputeFinal} className="rounded border px-3 py-2">
                 Compute final score
               </button>
-              <button style={buttonStyle} disabled={actionLoading} onClick={loadScorecard}>
+              <button disabled={busy} onClick={onLoadScorecard} className="rounded border px-3 py-2">
                 Load scorecard
               </button>
-              <button style={buttonStyle} disabled={loading || actionLoading} onClick={loadWorkspace}>
-                Refresh
-              </button>
-              <button style={buttonStyle} disabled={!debateId} onClick={() => copyToClipboard(debateId, "Debate ID")}>
-                Copy debate ID
-              </button>
-              <button
-                style={buttonStyle}
-                disabled={!roundIdInput}
-                onClick={() => copyToClipboard(roundIdInput, "Round ID")}
-              >
-                Copy round ID
-              </button>
             </div>
-          </section>
+          </div>
+
+          <div className="rounded-xl border p-4 space-y-3">
+            <h2 className="text-xl font-medium">Close Round</h2>
+            <input
+              className="w-full rounded border p-2"
+              value={roundIdInput}
+              onChange={(e) => setRoundIdInput(e.target.value)}
+              placeholder="Round ID"
+            />
+            <textarea
+              className="w-full rounded border p-2 min-h-[200px] font-mono text-sm"
+              value={speakersJson}
+              onChange={(e) => setSpeakersJson(e.target.value)}
+            />
+            <button disabled={busy} onClick={onCloseRound} className="rounded border px-3 py-2">
+              Close round
+            </button>
+          </div>
+
+          <div className="rounded-xl border p-4 space-y-3">
+            <h2 className="text-xl font-medium">Transcript</h2>
+            <input
+              className="w-full rounded border p-2"
+              value={speakerUserId}
+              onChange={(e) => setSpeakerUserId(e.target.value)}
+              placeholder="speakerUserId (optional)"
+            />
+            <textarea
+              className="w-full rounded border p-2 min-h-[100px]"
+              value={segmentText}
+              onChange={(e) => setSegmentText(e.target.value)}
+              placeholder="Transcript text"
+            />
+            <button disabled={busy} onClick={onAddSegment} className="rounded border px-3 py-2">
+              Add transcript segment
+            </button>
+
+            <div className="text-sm text-gray-700 mt-3">
+              Segments: {(workspace?.transcriptSegments || []).length}
+            </div>
+          </div>
 
           {scorecard ? (
-            <section style={{ marginBottom: 24 }}>
-              <h3>Scorecard</h3>
-              <p>
-                Status: <strong>{scorecard.status}</strong>
-              </p>
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  background: "#f8fafc",
-                  padding: 12,
-                  borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                }}
-              >
-                {JSON.stringify(scorecard.finalScore, null, 2)}
+            <div className="rounded-xl border p-4">
+              <h2 className="text-xl font-medium mb-2">Scorecard</h2>
+              <pre className="text-xs overflow-auto bg-gray-50 p-3 rounded">
+                {JSON.stringify(scorecard, null, 2)}
               </pre>
-            </section>
+            </div>
           ) : null}
-
-          <section>
-            <h3>Round scoring</h3>
-            <p style={{ opacity: 0.8 }}>Provide round scores as JSON and close a round.</p>
-            <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
-              <input
-                value={roundIdInput}
-                onChange={(event) => setRoundIdInput(event.target.value)}
-                placeholder="Round ID"
-                style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 10 }}
-              />
-              <textarea
-                value={speakersInput}
-                onChange={(event) => setSpeakersInput(event.target.value)}
-                style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 10, minHeight: 160 }}
-              />
-              <button style={buttonStyle} disabled={actionLoading} onClick={closeRound}>
-                Close round
-              </button>
-              <button style={buttonStyle} disabled={actionLoading} onClick={formatSpeakersJson}>
-                Format JSON
-              </button>
-            </div>
-
-            <h3>Latest transcript segments</h3>
-            <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-              <input
-                value={segmentSpeaker}
-                onChange={(event) => setSegmentSpeaker(event.target.value)}
-                placeholder="Speaker ID"
-                style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 10 }}
-              />
-              <textarea
-                value={segmentText}
-                onChange={(event) => setSegmentText(event.target.value)}
-                placeholder="Add transcript text..."
-                style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 10, minHeight: 80 }}
-              />
-              <button style={buttonStyle} disabled={actionLoading || !segmentText.trim()} onClick={addSegment}>
-                Add transcript segment
-              </button>
-            </div>
-            {transcriptPreview.length === 0 ? <p>No segments yet.</p> : null}
-            <ul>
-              {transcriptPreview.map((segment) => (
-                <li key={segment.id} style={{ marginBottom: 8 }}>
-                  <strong>{segment.speakerUserId || "Unknown speaker"}:</strong> {segment.text}
-                </li>
-              ))}
-            </ul>
-          </section>
         </>
-      ) : null}
-    </main>
+      )}
+    </div>
   );
 }

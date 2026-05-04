@@ -1,160 +1,189 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
-const cardStyle = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 10,
-  padding: 14,
-  marginBottom: 12,
-};
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
 
-const inputStyle = {
-  width: "100%",
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  padding: "8px 10px",
-};
-
-export default function DebatesPage() {
+export default function DebatesIndexPage() {
   const router = useRouter();
-  const [debates, setDebates] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [user, setUser] = useState(undefined);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    title: "",
-    motionText: "",
-    format: "short",
-    domain: "politics",
-    rounds: 3,
-  });
+  const [items, setItems] = useState([]);
 
-  const loadDebates = async () => {
-    setLoading(true);
-    setError("");
+  const [title, setTitle] = useState("");
+  const [motionText, setMotionText] = useState("");
+  const [format, setFormat] = useState("short");
+  const [domain, setDomain] = useState("politics");
+  const [rounds, setRounds] = useState(3);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
+    return () => unsub();
+  }, []);
+
+  async function loadDebates() {
     try {
-      const response = await fetch("/api/debates?limit=25");
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to load debates");
-      setDebates(payload.debates || []);
-    } catch (err) {
-      setError(err.message || "Failed to load debates");
+      setError("");
+      setLoading(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/debates?limit=25", { headers });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to load debates");
+      setItems(Array.isArray(body?.debates) ? body.debates : []);
+    } catch (e) {
+      setError(e.message || "Failed to load debates");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    loadDebates();
-  }, []);
+    if (user) loadDebates();
+    else if (user === null) setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-  const onCreateDebate = async (event) => {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
+  async function onCreate(e) {
+    e.preventDefault();
     try {
-      const response = await fetch("/api/debates", {
+      setError("");
+      setCreating(true);
+
+      const headers = {
+        "Content-Type": "application/json",
+        ...(await getAuthHeaders()),
+      };
+
+      const res = await fetch("/api/debates", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          ...form,
-          rounds: Number(form.rounds),
+          title,
+          motionText,
+          format,
+          domain,
+          rounds: Number(rounds),
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Failed to create debate");
-      if (payload?.debate?.id) {
-        await router.push(`/debates/${payload.debate.id}`);
-        return;
-      }
-      await loadDebates();
-    } catch (err) {
-      setError(err.message || "Failed to create debate");
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to create debate");
+
+      const debateId = body?.debate?.id;
+      if (!debateId) throw new Error("Debate created but missing debate id");
+
+      router.push(`/debates/${debateId}`);
+    } catch (e) {
+      setError(e.message || "Failed to create debate");
     } finally {
-      setSubmitting(false);
+      setCreating(false);
     }
-  };
+  }
+
+  if (user === undefined) return null;
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <h1 className="text-3xl font-semibold mb-2">Debates</h1>
+        <p className="text-gray-600 mb-5">Please sign in to create and manage debates.</p>
+        <Link href="/login" className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white font-medium">
+          Go to login
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <main style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
-      <h1>Debates</h1>
-      <p style={{ opacity: 0.75 }}>Create a debate and jump into the workspace.</p>
-      {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <h1 className="text-3xl font-semibold mb-1">Debates</h1>
+      <p className="text-gray-600 mb-6">Create a debate and jump into the workspace.</p>
 
-      <section style={{ ...cardStyle, marginBottom: 20 }}>
-        <h2 style={{ marginTop: 0 }}>Create Debate</h2>
-        <form onSubmit={onCreateDebate} style={{ display: "grid", gap: 10 }}>
+      {error ? <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">{error}</div> : null}
+
+      <form onSubmit={onCreate} className="mb-8 rounded-xl border p-4 space-y-4">
+        <h2 className="text-2xl font-medium">Create Debate</h2>
+
+        <input
+          className="w-full rounded border p-3"
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+
+        <textarea
+          className="w-full rounded border p-3 min-h-[120px]"
+          placeholder="Motion text"
+          value={motionText}
+          onChange={(e) => setMotionText(e.target.value)}
+          required
+        />
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <select className="rounded border p-3" value={format} onChange={(e) => setFormat(e.target.value)}>
+            <option value="short">short</option>
+            <option value="long">long</option>
+          </select>
+
+          <select className="rounded border p-3" value={domain} onChange={(e) => setDomain(e.target.value)}>
+            <option value="politics">politics</option>
+            <option value="sports">sports</option>
+            <option value="general">general</option>
+          </select>
+
           <input
-            required
-            placeholder="Debate title"
-            style={inputStyle}
-            value={form.title}
-            onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+            className="rounded border p-3"
+            type="number"
+            min={1}
+            max={20}
+            value={rounds}
+            onChange={(e) => setRounds(e.target.value)}
           />
-          <textarea
-            required
-            placeholder="Motion text"
-            style={{ ...inputStyle, minHeight: 90 }}
-            value={form.motionText}
-            onChange={(event) => setForm((prev) => ({ ...prev, motionText: event.target.value }))}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <select
-              style={inputStyle}
-              value={form.format}
-              onChange={(event) => setForm((prev) => ({ ...prev, format: event.target.value }))}
-            >
-              <option value="short">short</option>
-              <option value="long">long</option>
-            </select>
-            <select
-              style={inputStyle}
-              value={form.domain}
-              onChange={(event) => setForm((prev) => ({ ...prev, domain: event.target.value }))}
-            >
-              <option value="politics">politics</option>
-              <option value="sports">sports</option>
-              <option value="general">general</option>
-            </select>
-            <input
-              type="number"
-              min={1}
-              max={12}
-              style={inputStyle}
-              value={form.rounds}
-              onChange={(event) => setForm((prev) => ({ ...prev, rounds: event.target.value }))}
-            />
-          </div>
-          <button type="submit" disabled={submitting} style={{ ...inputStyle, cursor: "pointer", width: 180 }}>
-            {submitting ? "Creating..." : "Create debate"}
-          </button>
-        </form>
-      </section>
+        </div>
 
-      <section>
-        <h2>Recent debates</h2>
-        {debates[0]?.id ? (
-          <p style={{ marginBottom: 12 }}>
-            <Link href={`/debates/${debates[0].id}`} style={{ textDecoration: "underline" }}>
-              Resume latest debate
-            </Link>
-          </p>
-        ) : null}
-        {loading ? <p>Loading...</p> : null}
-        {debates.length === 0 && !loading ? <p>No debates yet.</p> : null}
-        {debates.map((debate) => (
-          <article key={debate.id} style={cardStyle}>
-            <h3 style={{ marginTop: 0 }}>{debate.title}</h3>
-            <p style={{ marginBottom: 8 }}>{debate.motionText}</p>
-            <p style={{ opacity: 0.8 }}>
-              Status: <strong>{debate.status}</strong> · Format: <strong>{debate.format}</strong> · Domain:{" "}
-              <strong>{debate.domain}</strong>
-            </p>
-            <Link href={`/debates/${debate.id}`}>Open workspace</Link>
-          </article>
-        ))}
-      </section>
-    </main>
+        <button
+          disabled={creating}
+          className="rounded-lg border px-5 py-3 font-medium disabled:opacity-50"
+          type="submit"
+        >
+          {creating ? "Creating..." : "Create debate"}
+        </button>
+      </form>
+
+      <div>
+        <h3 className="text-2xl font-medium mb-3">Recent debates</h3>
+        {loading ? (
+          <p className="text-gray-500">Loading...</p>
+        ) : items.length === 0 ? (
+          <p className="text-gray-600">No debates yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {items.map((d) => (
+              <div key={d.id} className="rounded-lg border p-3 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{d.title || "Untitled debate"}</div>
+                  <div className="text-sm text-gray-600">
+                    {d.format} · {d.domain} · {d.status}
+                  </div>
+                </div>
+                <Link className="text-indigo-600 underline" href={`/debates/${d.id}`}>
+                  Open workspace
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
