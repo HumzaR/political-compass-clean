@@ -2,12 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 import clsx from "clsx";
 import {
   Home,
   ListChecks,
-  BarChartHorizontal,
   Flame,
   Settings,
   User,
@@ -26,7 +25,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function Sidebar() {
-  const pathname = usePathname() || "/";
+  const router = useRouter();
+  const pathname = router.pathname || "/";
 
   return (
     <aside className="w-60 shrink-0 border-r bg-white text-gray-900">
