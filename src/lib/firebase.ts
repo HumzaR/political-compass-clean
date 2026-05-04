@@ -41,14 +41,14 @@ const hasCompleteEnvConfig =
 const allowFallbackInProd = process.env.ALLOW_FIREBASE_FALLBACK_IN_PROD === "true";
 const useFallbackConfig =
   !hasCompleteEnvConfig && (process.env.NODE_ENV !== "production" || allowFallbackInProd);
-const firebaseConfig = hasCompleteEnvConfig ? envConfig : useFallbackConfig ? fallbackConfig : null;
-if (!firebaseConfig) {
-  throw new Error(
-    "Missing Firebase configuration. Set NEXT_PUBLIC_FIREBASE_* environment variables in production."
+
+if (!hasCompleteEnvConfig && process.env.NODE_ENV === "production" && !allowFallbackInProd) {
+  console.warn(
+    "[firebase] Missing NEXT_PUBLIC_FIREBASE_* environment variables in production; using fallback config. Set env vars to target your own project."
   );
 }
 
-const app: FirebaseApp = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
+const firebaseConfig = hasCompleteEnvConfig ? envConfig : fallbackConfig;
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

@@ -1,0 +1,90 @@
+[35mdocs/debate-api-quickstart.md[m[36m:[m[32m3[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mdocs/debate-api-quickstart.md[m[36m:[m[32m30[m[36m:[m[1;31m=======[m
+[35mdocs/debate-api-quickstart.md[m[36m:[m[32m44[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mlib/debates/http.js[m[36m:[m[32m22[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mlib/debates/http.js[m[36m:[m[32m102[m[36m:[m[1;31m=======[m
+[35mlib/debates/http.js[m[36m:[m[32m105[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mlib/debates/scoring.js[m[36m:[m[32m3[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mlib/debates/scoring.js[m[36m:[m[32m58[m[36m:[m[1;31m=======[m
+[35mlib/debates/scoring.js[m[36m:[m[32m75[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mlib/debates/scoring.js[m[36m:[m[32m86[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mlib/debates/scoring.js[m[36m:[m[32m104[m[36m:[m[1;31m=======[m
+[35mlib/debates/scoring.js[m[36m:[m[32m121[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mlib/debates/store.js[m[36m:[m[32m2[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mlib/debates/store.js[m[36m:[m[32m204[m[36m:[m[1;31m=======[m
+[35mlib/debates/store.js[m[36m:[m[32m279[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mlib/hotTopics.js[m[36m:[m[32m26[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mlib/hotTopics.js[m[36m:[m[32m27[m[36m:[m[1;31m=======[m
+[35mlib/hotTopics.js[m[36m:[m[32m29[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/_app.js[m[36m:[m[32m6[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/_app.js[m[36m:[m[32m7[m[36m:[m[1;31m=======[m
+[35mpages/_app.js[m[36m:[m[32m10[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/end.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/end.js[m[36m:[m[32m14[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/end.js[m[36m:[m[32m24[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m2[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m21[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m30[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m35[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m37[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m39[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m44[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m46[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/live/session.js[m[36m:[m[32m48[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m9[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m16[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m21[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m30[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m35[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m40[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m73[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m90[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m99[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m103[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/rounds/[roundId]/close.js[m[36m:[m[32m104[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m13[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m23[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m29[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m35[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/score/final.js[m[36m:[m[32m38[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/scorecard.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/scorecard.js[m[36m:[m[32m15[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/scorecard.js[m[36m:[m[32m25[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/start.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/start.js[m[36m:[m[32m14[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/start.js[m[36m:[m[32m24[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m20[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m26[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m34[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m39[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/[debateId]/transcript/segments.js[m[36m:[m[32m42[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/index.js[m[36m:[m[32m1[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/index.js[m[36m:[m[32m3[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/index.js[m[36m:[m[32m5[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/api/debates/index.js[m[36m:[m[32m11[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/api/debates/index.js[m[36m:[m[32m42[m[36m:[m[1;31m=======[m
+[35mpages/api/debates/index.js[m[36m:[m[32m58[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/feed.js[m[36m:[m[32m26[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/feed.js[m[36m:[m[32m27[m[36m:[m[1;31m=======[m
+[35mpages/feed.js[m[36m:[m[32m29[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/feed.js[m[36m:[m[32m104[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/feed.js[m[36m:[m[32m106[m[36m:[m[1;31m=======[m
+[35mpages/feed.js[m[36m:[m[32m108[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35mpages/feed.js[m[36m:[m[32m173[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35mpages/feed.js[m[36m:[m[32m179[m[36m:[m[1;31m=======[m
+[35mpages/feed.js[m[36m:[m[32m184[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35msrc/lib/firebase.ts[m[36m:[m[32m3[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35msrc/lib/firebase.ts[m[36m:[m[32m17[m[36m:[m[1;31m=======[m
+[35msrc/lib/firebase.ts[m[36m:[m[32m19[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35msrc/lib/firebase.ts[m[36m:[m[32m45[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35msrc/lib/firebase.ts[m[36m:[m[32m55[m[36m:[m[1;31m=======[m
+[35msrc/lib/firebase.ts[m[36m:[m[32m57[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35msrc/lib/firebase.ts[m[36m:[m[32m64[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35msrc/lib/firebase.ts[m[36m:[m[32m78[m[36m:[m[1;31m=======[m
+[35msrc/lib/firebase.ts[m[36m:[m[32m79[m[36m:[m[1;31m>>>>>>>[m origin/main
+[35msrc/lib/firebase.ts[m[36m:[m[32m84[m[36m:[m[1;31m<<<<<<<[m HEAD
+[35msrc/lib/firebase.ts[m[36m:[m[32m86[m[36m:[m[1;31m=======[m
+[35msrc/lib/firebase.ts[m[36m:[m[32m88[m[36m:[m[1;31m>>>>>>>[m origin/main
