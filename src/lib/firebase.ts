@@ -50,6 +50,8 @@ if (!hasCompleteEnvConfig && process.env.NODE_ENV === "production" && !allowFall
 
 const firebaseConfig = hasCompleteEnvConfig ? envConfig : fallbackConfig;
 
+const app: FirebaseApp = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
