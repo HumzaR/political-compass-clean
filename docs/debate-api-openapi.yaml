@@ -1,0 +1,246 @@
+openapi: 3.1.0
+info:
+  title: Debate Platform MVP API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/debates:
+    get:
+      summary: List debates
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Debate list
+    post:
+      summary: Create debate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, motionText, format, domain]
+              properties:
+                title: { type: string }
+                motionText: { type: string }
+                format: { type: string, enum: [short, long] }
+                domain: { type: string, enum: [politics, sports, general] }
+      responses:
+        '201':
+          description: Debate created
+
+  /api/debates/{debateId}:
+    get:
+      summary: Get debate with rounds/scores/final score
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Debate payload
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (not debate owner)
+
+  /api/debates/{debateId}/live/session:
+    post:
+      summary: Create live room/token with provider adapter
+      description: Owner-protected endpoint. Requires DAILY_DOMAIN configuration.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Session created
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (not debate owner)
+        '503':
+          description: Live provider domain missing
+
+  /api/debates/{debateId}/start:
+    post:
+      summary: Mark debate live and start transcript ingestion
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Started }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden (not debate owner) }
+        '409': { description: Invalid state transition }
+
+  /api/debates/{debateId}/rounds/{roundId}/close:
+    post:
+      summary: Close round and compute round score
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: roundId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Round closed }
+        '400': { description: Invalid scoring payload }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden (not debate owner) }
+        '409': { description: Invalid state transition }
+
+  /api/debates/{debateId}/end:
+    post:
+      summary: End debate and queue final scoring
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Ended }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden (not debate owner) }
+        '409': { description: Invalid state transition }
+
+  /api/debates/{debateId}/transcript/segments:
+    get:
+      summary: List transcript segments for a debate
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Transcript segments payload }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden (not debate owner) }
+    post:
+      summary: Ingest transcript chunks from live provider/webhook
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [segments]
+              properties:
+                segments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      speakerUserId: { type: string }
+                      startMs: { type: integer }
+                      endMs: { type: integer }
+                      text: { type: string }
+                      confidence: { type: number }
+      responses:
+        '202': { description: Accepted }
+
+  /api/debates/{debateId}/score/final:
+    post:
+      summary: Compute/publish final score
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Final score computed }
+        '400': { description: Invalid confidence factor or missing round scores }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden (not debate owner) }
+        '409': { description: Invalid state transition }
+
+  /api/debates/{debateId}/scorecard:
+    get:
+      summary: Get explainable scorecard
+      description: Owner-protected endpoint.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Scorecard payload
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (not debate owner)
+
+  /api/debates/{debateId}/workspace:
+    get:
+      summary: Get debate workspace payload
+      description: Owner-protected endpoint with debate state and transcript segments.
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Workspace payload
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (not debate owner)
+
+  /api/uploads/debate-media:
+    post:
+      summary: Create upload session and return signed URL
+      responses:
+        '200':
+          description: Signed upload target
+
+  /api/debates/{debateId}/process-upload:
+    post:
+      summary: Process uploaded media (ASR + scoring)
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Processing started }
+
+  /api/debates/{debateId}/share-card:
+    post:
+      summary: Generate shareable debate result card
+      parameters:
+        - in: path
+          name: debateId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Share card created }
