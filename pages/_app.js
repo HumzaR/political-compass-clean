@@ -3,8 +3,6 @@ import "../styles/globals.css";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
-// Ensure Firebase side-effect init (config in lib/firebase)
-
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 

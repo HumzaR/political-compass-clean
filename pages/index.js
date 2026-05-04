@@ -79,17 +79,25 @@ export default function Home() {
             Take the Quiz
           </Link>
           {user && (
-            <Link
-              href="/feed"
-              className="inline-block px-8 py-4 rounded-lg border-2 border-indigo-600 text-indigo-600 font-semibold text-lg hover:bg-indigo-50 transition-colors text-center"
-            >
-              View Feed
-            </Link>
+            <>
+              <Link
+                href="/feed"
+                className="inline-block px-8 py-4 rounded-lg border-2 border-indigo-600 text-indigo-600 font-semibold text-lg hover:bg-indigo-50 transition-colors text-center"
+              >
+                View Feed
+              </Link>
+              <Link
+                href="/debates"
+                className="inline-block px-8 py-4 rounded-lg border-2 border-emerald-600 text-emerald-600 font-semibold text-lg hover:bg-emerald-50 transition-colors text-center"
+              >
+                Open Debates
+              </Link>
+            </>
           )}
         </div>
 
         {/* Features Grid */}
-        <div className="grid md:grid-cols-3 gap-8 mt-16">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mt-16">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
               <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,6 +131,18 @@ export default function Home() {
             <h3 className="text-xl font-semibold mb-2">Hot Topics</h3>
             <p className="text-gray-600">
               Respond to current political events and see how your positions shift in real-time.
+            </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold mb-2">Live Debates</h3>
+            <p className="text-gray-600">
+              Create debates, manage rounds, ingest transcript segments, and compute final scorecards from the workspace.
             </p>
           </div>
         </div>

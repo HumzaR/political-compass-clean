@@ -2,13 +2,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 import clsx from "clsx";
 import {
   Home,
   ListChecks,
-  BarChartHorizontal,
   Flame,
+  Gavel,
   Settings,
   User,
   type LucideIcon,
@@ -21,12 +21,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: "My Profile",  href: "/profile",    icon: User },
   { label: "My Answers",  href: "/my-answers", icon: ListChecks },
   { label: "Hot Topics",  href: "/hot-topics", icon: Flame },
+  { label: "Debates",     href: "/debates",    icon: Gavel },
   { label: "Settings",    href: "/settings",   icon: Settings },
-  
 ];
 
 export default function Sidebar() {
-  const pathname = usePathname() || "/";
+  const router = useRouter();
+  const pathname = router.pathname || "/";
 
   return (
     <aside className="w-60 shrink-0 border-r bg-white text-gray-900">
@@ -34,7 +35,7 @@ export default function Sidebar() {
 
       <nav className="px-2 pb-4 space-y-1">
         {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
-          const active = pathname === href;
+          const active = href === "/debates" ? pathname.startsWith("/debates") : pathname === href;
           return (
             <Link
               key={href}

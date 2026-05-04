@@ -1,6 +1,18 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+} from "firebase/firestore";
 
 const fallbackConfig = {
   apiKey: "AIzaSyDTi7zDMs6Y_3QjuynwaL2ZQIXnnMx_6P8",
@@ -26,12 +38,35 @@ const hasCompleteEnvConfig =
   !!envConfig.projectId &&
   !!envConfig.appId;
 
+const allowFallbackInProd = process.env.ALLOW_FIREBASE_FALLBACK_IN_PROD === "true";
+const useFallbackConfig =
+  !hasCompleteEnvConfig && (process.env.NODE_ENV !== "production" || allowFallbackInProd);
+
+if (!hasCompleteEnvConfig && process.env.NODE_ENV === "production" && !allowFallbackInProd) {
+  console.warn(
+    "[firebase] Missing NEXT_PUBLIC_FIREBASE_* environment variables in production; using fallback config. Set env vars to target your own project."
+  );
+}
+
 const firebaseConfig = hasCompleteEnvConfig ? envConfig : fallbackConfig;
 
 const app: FirebaseApp = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+export const firestore = {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+};
 
 export function getFirebaseApp(): FirebaseApp {
   return app;
