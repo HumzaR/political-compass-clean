@@ -1,7 +1,6 @@
 // pages/feed.js
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/router";
 
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -81,13 +80,12 @@ const SCALE_LABELS = {
 // -----------------------------------------------------------
 
 export default function FeedPage() {
-  const router = useRouter();
-
   // Auth state
   const [user, setUser] = useState(undefined); // undefined = loading, null = signed out, object = signed in
 
   // Feed state
   const [loadingFeed, setLoadingFeed] = useState(true);
+  const [feedError, setFeedError] = useState("");
   const [posts, setPosts] = useState([]); // flattened posts
   const [profilesByUid, setProfilesByUid] = useState({});
 
@@ -108,45 +106,52 @@ export default function FeedPage() {
   // -----------------
   useEffect(() => {
     async function run() {
-      if (!user) {
-        setLoadingFeed(false);
-        return;
-      }
-      setLoadingFeed(true);
+      try {
+        setFeedError("");
+        if (!user) {
+          setLoadingFeed(false);
+          return;
+        }
+        setLoadingFeed(true);
 
-      // 1) who I follow (plus me)
-      const list = await fetchFollowees(user.uid);
+        // 1) who I follow (plus me)
+        const list = await fetchFollowees(user.uid);
 
-      // 2) fetch answers + profiles
-      const [answersDocs, profileDocs] = await Promise.all([
-        Promise.all(list.map((uid) => fetchUserAnswers(uid))),
-        Promise.all(list.map((uid) => fetchUserProfile(uid))),
-      ]);
+        // 2) fetch answers + profiles
+        const [answersDocs, profileDocs] = await Promise.all([
+          Promise.all(list.map((uid) => fetchUserAnswers(uid))),
+          Promise.all(list.map((uid) => fetchUserProfile(uid))),
+        ]);
 
-      const profilesMap = {};
-      profileDocs.forEach((p) => {
-        if (p?.uid) profilesMap[p.uid] = p;
-      });
-      setProfilesByUid(profilesMap);
+        const profilesMap = {};
+        profileDocs.forEach((p) => {
+          if (p?.uid) profilesMap[p.uid] = p;
+        });
+        setProfilesByUid(profilesMap);
 
-      // 3) flatten into posts
-      let flat = [];
-      answersDocs
-        .filter(Boolean)
-        .forEach((adoc) => {
-          flat = flat.concat(answersToPosts(adoc, profilesMap));
+        // 3) flatten into posts
+        let flat = [];
+        answersDocs
+          .filter(Boolean)
+          .forEach((adoc) => {
+            flat = flat.concat(answersToPosts(adoc, profilesMap));
+          });
+
+        // 4) sort newest first (fallback to uid to keep stable order)
+        flat.sort((a, b) => {
+          const at = a.createdAt ? a.createdAt.getTime() : 0;
+          const bt = b.createdAt ? b.createdAt.getTime() : 0;
+          if (bt !== at) return bt - at;
+          return a.id < b.id ? -1 : 1;
         });
 
-      // 4) sort newest first (fallback to uid to keep stable order)
-      flat.sort((a, b) => {
-        const at = a.createdAt ? a.createdAt.getTime() : 0;
-        const bt = b.createdAt ? b.createdAt.getTime() : 0;
-        if (bt !== at) return bt - at;
-        return a.id < b.id ? -1 : 1;
-      });
-
-      setPosts(flat);
-      setLoadingFeed(false);
+        setPosts(flat);
+      } catch (error) {
+        console.error("Failed to load feed", error);
+        setFeedError("Could not load your feed right now. Please try again.");
+      } finally {
+        setLoadingFeed(false);
+      }
     }
 
     run();
@@ -157,15 +162,19 @@ export default function FeedPage() {
   // -----------------
   useEffect(() => {
     async function loadHotTopics() {
-      const u = auth.currentUser;
-      if (!u) return;
-      const topics = await fetchUnansweredHotTopics(u.uid);
-      setPendingTopics(topics);
+      try {
+        const u = auth.currentUser;
+        if (!u) return;
+        const topics = await fetchUnansweredHotTopics(u.uid);
+        setPendingTopics(topics);
 
-      // auto-open first topic not snoozed
-      const snoozed = JSON.parse(localStorage.getItem("snoozedHotTopics") || "[]");
-      const first = topics.find((t) => !snoozed.includes(t.id));
-      if (first) setActiveTopic(first);
+        // auto-open first topic not snoozed
+        const snoozed = JSON.parse(localStorage.getItem("snoozedHotTopics") || "[]");
+        const first = topics.find((t) => !snoozed.includes(t.id));
+        if (first) setActiveTopic(first);
+      } catch (error) {
+        console.error("Failed to load hot topics", error);
+      }
     }
     loadHotTopics();
   }, [user]);
@@ -323,6 +332,12 @@ export default function FeedPage() {
           </Link>
         </div>
       </div>
+
+      {feedError ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {feedError}
+        </div>
+      ) : null}
 
       {/* Simple filters (non-functional placeholders for now, keeps your old look) */}
       <div className="mb-6 flex flex-wrap gap-3">
