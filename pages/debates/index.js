@@ -81,7 +81,7 @@ export default function DebatesIndexPage() {
       const debateId = body?.debate?.id;
       if (!debateId) throw new Error("Debate created but missing debate id");
 
-      router.push(`/debates/${debateId}`);
+      router.push(`/debates/${debateId}/invite`);
     } catch (e) {
       setError(e.message || "Failed to create debate");
     } finally {
