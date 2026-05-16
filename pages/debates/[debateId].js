@@ -209,15 +209,17 @@ export default function DebateWorkspacePage() {
     return () => clearInterval(id);
   }, [debate?.status, debate?.startedAt]);
 
-  async function loadWorkspace() {
+  async function loadWorkspace({ silent = false } = {}) {
     if (!debateId) {
       return;
     }
 
     try {
-      setLoading(true);
-      setError("");
-      setNotice("");
+      if (!silent) {
+        setLoading(true);
+        setError("");
+        setNotice("");
+      }
 
       const res = await fetch(`/api/debates/${debateId}/workspace`, {
         headers: await getAuthHeaders(),
@@ -230,11 +232,16 @@ export default function DebateWorkspacePage() {
       }
 
       setWorkspace(body);
-      setScorecard(null);
+
+      if (!silent) {
+        setScorecard(null);
+      }
     } catch (e) {
       setError(e.message || "Failed to load workspace");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -256,13 +263,13 @@ export default function DebateWorkspacePage() {
     }
 
     const id = setInterval(() => {
-      loadWorkspace();
+      loadWorkspace({ silent: true });
     }, 5000);
 
     return () => clearInterval(id);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debate?.status]);
+  }, [debate?.status, debateId]);
 
   async function callApi(path, method = "POST", body) {
     setBusy(true);
