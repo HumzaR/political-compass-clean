@@ -91,11 +91,14 @@ export default function DebateWorkspacePage() {
   const closedRoundCount = workspace?.meta?.closedRoundCount ?? 0;
   const hasLiveSession = workspace?.meta?.hasLiveSession ?? !!debate?.live;
 
-  const isWaitingForOpponent =
-    debate?.status === "scheduled" && !hasTwoParticipants;
+  const isOwner = workspace?.meta?.isOwner || debate?.createdByUid === user?.uid;
+  const isParticipant =
+    workspace?.meta?.isParticipant ||
+    participants.some((participant) => participant.userUid === user?.uid);
 
-  const canStartDebate =
-    debate?.status === "scheduled" && hasTwoParticipants;
+  const isWaitingForOpponent = debate?.status === "scheduled" && !hasTwoParticipants;
+
+  const canStartDebate = debate?.status === "scheduled" && hasTwoParticipants;
 
   const firstOpenRoundId = useMemo(() => {
     const rounds = debate?.rounds || [];
@@ -121,6 +124,14 @@ export default function DebateWorkspacePage() {
 
     return live.roomUrl || "";
   }, [debate]);
+
+  const inviteLink = useMemo(() => {
+    if (typeof window === "undefined" || !debateId) {
+      return "";
+    }
+
+    return `${window.location.origin}/debates/${debateId}/join`;
+  }, [debateId]);
 
   const estimatedDurationLabel = useMemo(() => {
     const format = debate?.format || "short";
@@ -240,13 +251,13 @@ export default function DebateWorkspacePage() {
   useEffect(() => {
     const status = debate?.status;
 
-    if (status !== "live" && status !== "scheduled") {
+    if (status !== "live" && status !== "scheduled" && status !== "ended") {
       return;
     }
 
     const id = setInterval(() => {
       loadWorkspace();
-    }, 15000);
+    }, 5000);
 
     return () => clearInterval(id);
 
@@ -280,8 +291,25 @@ export default function DebateWorkspacePage() {
     }
   }
 
+  async function copyInviteLink() {
+    try {
+      if (!inviteLink) {
+        throw new Error("Invite link is not ready yet.");
+      }
+
+      await navigator.clipboard.writeText(inviteLink);
+      setNotice("Invite link copied.");
+    } catch (e) {
+      setError(e.message || "Could not copy invite link.");
+    }
+  }
+
   async function onStart() {
     try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can start the debate.");
+      }
+
       if (!hasTwoParticipants) {
         throw new Error("You need two participants before starting the debate.");
       }
@@ -297,6 +325,10 @@ export default function DebateWorkspacePage() {
 
   async function onEnd() {
     try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can end the debate.");
+      }
+
       await callApi(`/api/debates/${debateId}/end`, "POST");
 
       setNotice("Debate ended.");
@@ -308,6 +340,10 @@ export default function DebateWorkspacePage() {
 
   async function onCreateLiveSession() {
     try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can create the live session.");
+      }
+
       await callApi(`/api/debates/${debateId}/live/session`, "POST");
 
       setNotice("Live session created.");
@@ -319,6 +355,10 @@ export default function DebateWorkspacePage() {
 
   async function onCloseRound() {
     try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can close rounds.");
+      }
+
       const speakers = JSON.parse(speakersJson);
 
       if (!roundIdInput) {
@@ -338,6 +378,10 @@ export default function DebateWorkspacePage() {
 
   async function onComputeFinal() {
     try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can compute the final score.");
+      }
+
       await callApi(`/api/debates/${debateId}/score/final`, "POST", {
         confidenceFactor: 1,
       });
@@ -433,49 +477,66 @@ export default function DebateWorkspacePage() {
 
             <div className="text-sm text-gray-600 mt-1">
               Rounds: {roundCount} · Closed: {closedRoundCount} · Live session:{" "}
-              {hasLiveSession ? "yes" : "no"} · Participants: {participants.length}/2
+              {hasLiveSession ? "yes" : "no"} · Participants: {participants.length}/2 ·{" "}
+              Role: {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                disabled={busy}
-                onClick={onCreateLiveSession}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                Create live session
-              </button>
+              {isOwner ? (
+                <>
+                  <button
+                    disabled={busy}
+                    onClick={copyInviteLink}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    Copy invite link
+                  </button>
 
-              <button
-                disabled={busy || !canStartDebate}
-                onClick={onStart}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                Start debate
-              </button>
+                  <button
+                    disabled={busy}
+                    onClick={onCreateLiveSession}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    Create live session
+                  </button>
 
-              <button
-                disabled={busy || debate?.status !== "live"}
-                onClick={onEnd}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                End debate
-              </button>
+                  <button
+                    disabled={busy || !canStartDebate}
+                    onClick={onStart}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    Start debate
+                  </button>
 
-              <button
-                disabled={busy || debate?.status !== "ended"}
-                onClick={onComputeFinal}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                Compute final score
-              </button>
+                  <button
+                    disabled={busy || debate?.status !== "live"}
+                    onClick={onEnd}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    End debate
+                  </button>
 
-              <button
-                disabled={busy}
-                onClick={onLoadScorecard}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                Load scorecard
-              </button>
+                  <button
+                    disabled={busy || debate?.status !== "ended"}
+                    onClick={onComputeFinal}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    Compute final score
+                  </button>
+
+                  <button
+                    disabled={busy}
+                    onClick={onLoadScorecard}
+                    className="rounded border px-3 py-2 disabled:opacity-50"
+                  >
+                    Load scorecard
+                  </button>
+                </>
+              ) : (
+                <div className="rounded border px-3 py-2 text-sm text-gray-600">
+                  Waiting for host controls
+                </div>
+              )}
             </div>
           </div>
 
@@ -499,12 +560,20 @@ export default function DebateWorkspacePage() {
 
           {debate?.status === "scheduled" && hasTwoParticipants ? (
             <div className="rounded-xl border border-green-200 bg-green-50 p-5">
-              <h2 className="text-xl font-semibold text-green-800">
-                Opponent joined
-              </h2>
+              <h2 className="text-xl font-semibold text-green-800">Opponent joined</h2>
               <p className="mt-1 text-green-700">
-                Both participants are now in the debate. Create a live session if you have not
-                already, then start the debate.
+                Both participants are now in the debate. The host can create the live session and
+                start the debate.
+              </p>
+            </div>
+          ) : null}
+
+          {!isOwner && !liveJoinUrl ? (
+            <div className="rounded-xl border p-5 text-center">
+              <h2 className="text-xl font-semibold">Waiting for host to start video</h2>
+              <p className="mt-2 text-gray-600">
+                You have joined the debate. The video room will appear here once the host creates
+                the live session.
               </p>
             </div>
           ) : null}
@@ -537,6 +606,7 @@ export default function DebateWorkspacePage() {
                         <div className="text-lg font-semibold">
                           {debate?.title || "Live debate"}
                         </div>
+
                         <div className="text-sm opacity-90">
                           {debate?.format} format · {roundCount} rounds ·{" "}
                           {estimatedDurationLabel}
@@ -570,67 +640,71 @@ export default function DebateWorkspacePage() {
                 </div>
               ) : (
                 <p className="text-gray-600">
-                  The debate has ended. Click Compute final score, then Load scorecard to view
-                  the result.
+                  The debate has ended. The host should click Compute final score to generate the
+                  result.
                 </p>
               )}
             </div>
           ) : null}
 
-          <div className="rounded-xl border p-4 space-y-3">
-            <h2 className="text-xl font-medium">Close Round</h2>
+          {isOwner ? (
+            <>
+              <div className="rounded-xl border p-4 space-y-3">
+                <h2 className="text-xl font-medium">Close Round</h2>
 
-            <input
-              className="w-full rounded border p-2"
-              value={roundIdInput}
-              onChange={(e) => setRoundIdInput(e.target.value)}
-              placeholder="Round ID"
-            />
+                <input
+                  className="w-full rounded border p-2"
+                  value={roundIdInput}
+                  onChange={(e) => setRoundIdInput(e.target.value)}
+                  placeholder="Round ID"
+                />
 
-            <textarea
-              className="w-full rounded border p-2 min-h-[200px] font-mono text-sm"
-              value={speakersJson}
-              onChange={(e) => setSpeakersJson(e.target.value)}
-            />
+                <textarea
+                  className="w-full rounded border p-2 min-h-[200px] font-mono text-sm"
+                  value={speakersJson}
+                  onChange={(e) => setSpeakersJson(e.target.value)}
+                />
 
-            <button
-              disabled={busy || debate?.status !== "live"}
-              onClick={onCloseRound}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              Close round
-            </button>
-          </div>
+                <button
+                  disabled={busy || debate?.status !== "live"}
+                  onClick={onCloseRound}
+                  className="rounded border px-3 py-2 disabled:opacity-50"
+                >
+                  Close round
+                </button>
+              </div>
 
-          <div className="rounded-xl border p-4 space-y-3">
-            <h2 className="text-xl font-medium">Transcript</h2>
+              <div className="rounded-xl border p-4 space-y-3">
+                <h2 className="text-xl font-medium">Transcript</h2>
 
-            <input
-              className="w-full rounded border p-2"
-              value={speakerUserId}
-              onChange={(e) => setSpeakerUserId(e.target.value)}
-              placeholder="speakerUserId, optional"
-            />
+                <input
+                  className="w-full rounded border p-2"
+                  value={speakerUserId}
+                  onChange={(e) => setSpeakerUserId(e.target.value)}
+                  placeholder="speakerUserId, optional"
+                />
 
-            <textarea
-              className="w-full rounded border p-2 min-h-[100px]"
-              value={segmentText}
-              onChange={(e) => setSegmentText(e.target.value)}
-              placeholder="Transcript text"
-            />
+                <textarea
+                  className="w-full rounded border p-2 min-h-[100px]"
+                  value={segmentText}
+                  onChange={(e) => setSegmentText(e.target.value)}
+                  placeholder="Transcript text"
+                />
 
-            <button
-              disabled={busy}
-              onClick={onAddSegment}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              Add transcript segment
-            </button>
+                <button
+                  disabled={busy}
+                  onClick={onAddSegment}
+                  className="rounded border px-3 py-2 disabled:opacity-50"
+                >
+                  Add transcript segment
+                </button>
 
-            <div className="text-sm text-gray-700 mt-3">
-              Segments: {(workspace?.transcriptSegments || []).length}
-            </div>
-          </div>
+                <div className="text-sm text-gray-700 mt-3">
+                  Segments: {(workspace?.transcriptSegments || []).length}
+                </div>
+              </div>
+            </>
+          ) : null}
 
           {scorecard ? (
             <div className="rounded-xl border p-4">
