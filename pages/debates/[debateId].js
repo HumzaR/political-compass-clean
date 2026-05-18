@@ -133,6 +133,23 @@ export default function DebateWorkspacePage() {
     return `${window.location.origin}/debates/${debateId}/join`;
   }, [debateId]);
 
+  const currentRound = useMemo(() => {
+  const rounds = debate?.rounds || [];
+  return rounds.find((round) => round.status !== "closed") || null;
+}, [debate]);
+
+const currentRoundLabel = currentRound
+  ? `Round ${currentRound.roundNumber}`
+  : debate?.status === "ended"
+    ? "Debate ended"
+    : "Not started";
+
+const speakerA = participants.find((participant) => participant.seat === "speakerA");
+const speakerB = participants.find((participant) => participant.seat === "speakerB");
+
+const speakerAName = speakerA?.displayName || "Debater A";
+const speakerBName = speakerB?.displayName || "Debater B";
+
   const estimatedDurationLabel = useMemo(() => {
     const format = debate?.format || "short";
     const count = Number(roundCount || 0);
@@ -586,55 +603,107 @@ export default function DebateWorkspacePage() {
           ) : null}
 
           {liveJoinUrl ? (
-            <div className="rounded-xl border p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-medium">Live Video Debate</h2>
-                  <p className="text-sm text-gray-600">
-                    Daily room: {debate?.live?.roomName || "Created"}
-                  </p>
-                </div>
+  <div className="overflow-hidden rounded-2xl border bg-neutral-950 text-white shadow-xl">
+    <div className="border-b border-white/10 bg-gradient-to-r from-neutral-950 via-neutral-900 to-neutral-950 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.25em] text-indigo-300">
+            Live Debate
+          </div>
 
-                <a
-                  href={liveJoinUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded border px-3 py-2"
-                >
-                  Open in new tab
-                </a>
-              </div>
+          <h2 className="mt-1 text-2xl font-bold">
+            {debate?.title || "Untitled debate"}
+          </h2>
 
-              <div className="relative overflow-hidden rounded-lg border">
-                {debate?.status === "live" ? (
-                  <div className="absolute left-4 right-4 top-4 z-10 rounded-xl bg-black/75 p-4 text-white shadow-lg">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-semibold">
-                          {debate?.title || "Live debate"}
-                        </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
+            <span className="rounded-full bg-white/10 px-3 py-1">
+              {debate?.format || "short"} format
+            </span>
 
-                        <div className="text-sm opacity-90">
-                          {debate?.format} format · {roundCount} rounds ·{" "}
-                          {estimatedDurationLabel}
-                        </div>
-                      </div>
+            <span className="rounded-full bg-white/10 px-3 py-1">
+              {roundCount} rounds
+            </span>
 
-                      <div className="rounded-lg bg-white/15 px-4 py-2 font-mono text-2xl">
-                        {formatTimer(elapsedSeconds)}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
+            <span className="rounded-full bg-white/10 px-3 py-1">
+              {estimatedDurationLabel}
+            </span>
 
-                <iframe
-                  src={liveJoinUrl}
-                  className="h-[650px] w-full"
-                  allow="camera; microphone; fullscreen; display-capture; autoplay"
-                />
-              </div>
-            </div>
-          ) : null}
+            <span className="rounded-full bg-white/10 px-3 py-1">
+              {currentRoundLabel}
+            </span>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-[0.2em] text-white/50">
+            Timer
+          </div>
+
+          <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
+            {debate?.status === "live" ? formatTimer(elapsedSeconds) : "00:00"}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid gap-3 bg-neutral-900 p-4 md:grid-cols-2">
+      <div className="rounded-xl border border-white/10 bg-black/40 p-4">
+        <div className="text-xs uppercase tracking-[0.2em] text-white/40">
+          Speaker A
+        </div>
+        <div className="mt-1 text-lg font-semibold">{speakerAName}</div>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-black/40 p-4">
+        <div className="text-xs uppercase tracking-[0.2em] text-white/40">
+          Speaker B
+        </div>
+        <div className="mt-1 text-lg font-semibold">{speakerBName}</div>
+      </div>
+    </div>
+
+    <div className="relative bg-black">
+      {debate?.status === "scheduled" ? (
+        <div className="absolute left-4 top-4 z-10 rounded-xl bg-yellow-400 px-4 py-2 text-sm font-semibold text-black shadow-lg">
+          Waiting to start
+        </div>
+      ) : null}
+
+      {debate?.status === "live" ? (
+        <div className="absolute left-4 top-4 z-10 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-lg">
+          LIVE
+        </div>
+      ) : null}
+
+      {debate?.status === "ended" ? (
+        <div className="absolute left-4 top-4 z-10 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black shadow-lg">
+          Debate ended
+        </div>
+      ) : null}
+
+      <iframe
+        src={liveJoinUrl}
+        className="h-[680px] w-full"
+        allow="camera; microphone; fullscreen; display-capture; autoplay"
+      />
+    </div>
+
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-neutral-950 p-4">
+      <div className="text-sm text-white/60">
+        {speakerAName} vs {speakerBName}
+      </div>
+
+      <a
+        href={liveJoinUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+      >
+        Open video in new tab
+      </a>
+    </div>
+  </div>
+) : null}
 
           {debate?.status === "ended" ? (
             <div className="rounded-xl border p-5 space-y-3">
