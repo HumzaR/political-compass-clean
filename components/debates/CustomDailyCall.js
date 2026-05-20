@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DailyIframe from "@daily-co/daily-js";
 import {
   DailyAudio,
@@ -9,6 +9,121 @@ import {
   useParticipantIds,
   useParticipantProperty,
 } from "@daily-co/daily-react";
+
+const DIMENSION_LABELS = {
+  argumentQuality: "argument quality",
+  factualAccuracy: "factual accuracy",
+  rebuttalEffectiveness: "rebuttal effectiveness",
+  rhetoricDelivery: "delivery and rhetoric",
+  topicConsistency: "topic consistency",
+};
+
+function getScoreForSpeaker(finalScore, speakerId) {
+  const item = finalScore?.leaderboard?.find((entry) => entry.speakerId === speakerId);
+  return Number(item?.score || 0);
+}
+
+function getSpeakerName(speakerId, speakerAName, speakerBName) {
+  if (speakerId === "speakerA") {
+    return speakerAName;
+  }
+
+  if (speakerId === "speakerB") {
+    return speakerBName;
+  }
+
+  return speakerId || "Unknown speaker";
+}
+
+function aggregateDimensions(roundScores, speakerId) {
+  const totals = {};
+  let count = 0;
+
+  (roundScores || []).forEach((roundScore) => {
+    const dimensions = roundScore?.speakers?.[speakerId]?.dimensions;
+
+    if (!dimensions) {
+      return;
+    }
+
+    Object.keys(DIMENSION_LABELS).forEach((key) => {
+      totals[key] = (totals[key] || 0) + Number(dimensions[key] || 0);
+    });
+
+    count += 1;
+  });
+
+  if (!count) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(totals).map(([key, value]) => [key, value / count])
+  );
+}
+
+function buildResultExplanation({ finalScore, roundScores, speakerAName, speakerBName }) {
+  if (!finalScore) {
+    return {
+      winnerReason: "The scoring engine is still calculating the result.",
+      loserReason: "The post-debate breakdown will appear once the final score is ready.",
+    };
+  }
+
+  if (finalScore.tie) {
+    return {
+      winnerReason:
+        "Both debaters finished with the same score, so the debate has been marked as a tie.",
+      loserReason:
+        "Neither side clearly outperformed the other across the scoring dimensions.",
+    };
+  }
+
+  const winnerId = finalScore.winnerSpeakerId || finalScore.leaderboard?.[0]?.speakerId;
+  const loserId = winnerId === "speakerA" ? "speakerB" : "speakerA";
+
+  const winnerName = getSpeakerName(winnerId, speakerAName, speakerBName);
+  const loserName = getSpeakerName(loserId, speakerAName, speakerBName);
+
+  const winnerDimensions = aggregateDimensions(roundScores, winnerId);
+  const loserDimensions = aggregateDimensions(roundScores, loserId);
+
+  const dimensionComparisons = Object.keys(DIMENSION_LABELS)
+    .map((key) => ({
+      key,
+      label: DIMENSION_LABELS[key],
+      winnerValue: Number(winnerDimensions[key] || 0),
+      loserValue: Number(loserDimensions[key] || 0),
+      gap: Number(winnerDimensions[key] || 0) - Number(loserDimensions[key] || 0),
+    }))
+    .sort((a, b) => b.gap - a.gap);
+
+  const winnerStrengths = dimensionComparisons
+    .filter((item) => item.gap > 0)
+    .slice(0, 2)
+    .map((item) => item.label);
+
+  const loserWeaknesses = dimensionComparisons
+    .filter((item) => item.gap > 0)
+    .slice(0, 2)
+    .map((item) => item.label);
+
+  if (!winnerStrengths.length) {
+    return {
+      winnerReason: `${winnerName} edged the debate overall based on the combined scoring dimensions.`,
+      loserReason: `${loserName} was close, but fell slightly behind on the final combined score.`,
+    };
+  }
+
+  return {
+    winnerReason: `${winnerName} won because they performed better on ${winnerStrengths.join(
+      " and "
+    )}.`,
+    loserReason: `${loserName} lost ground mainly on ${loserWeaknesses.join(
+      " and "
+    )}, which reduced their final score.`,
+  };
+}
 
 function ParticipantTile({ sessionId, fallbackName, label }) {
   const participantName = useParticipantProperty(sessionId, "user_name");
@@ -144,6 +259,197 @@ function CallControls({ joined }) {
   );
 }
 
+function ScoreCard({ label, name, score, animatedScore }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+        {label}
+      </div>
+
+      <div className="mt-2 text-xl font-bold">{name}</div>
+
+      <div className="mt-6 font-mono text-6xl font-black">
+        {animatedScore.toFixed(1)}
+      </div>
+
+      <div className="mt-4 h-4 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-white transition-all duration-200"
+          style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+        />
+      </div>
+
+      <div className="mt-2 text-sm text-white/50">Final score out of 100</div>
+    </div>
+  );
+}
+
+function ResultGraphic({
+  finalScore,
+  roundScores,
+  speakerAName,
+  speakerBName,
+}) {
+  const [animatedA, setAnimatedA] = useState(0);
+  const [animatedB, setAnimatedB] = useState(0);
+  const [stage, setStage] = useState("calculating");
+
+  const speakerAScore = getScoreForSpeaker(finalScore, "speakerA");
+  const speakerBScore = getScoreForSpeaker(finalScore, "speakerB");
+
+  const winnerId = finalScore?.tie
+    ? null
+    : finalScore?.winnerSpeakerId || finalScore?.leaderboard?.[0]?.speakerId || null;
+
+  const winnerName = winnerId
+    ? getSpeakerName(winnerId, speakerAName, speakerBName)
+    : null;
+
+  const explanation = useMemo(
+    () =>
+      buildResultExplanation({
+        finalScore,
+        roundScores,
+        speakerAName,
+        speakerBName,
+      }),
+    [finalScore, roundScores, speakerAName, speakerBName]
+  );
+
+  useEffect(() => {
+    setAnimatedA(0);
+    setAnimatedB(0);
+
+    if (!finalScore) {
+      setStage("calculating");
+      return;
+    }
+
+    setStage("counting");
+
+    const durationMs = 2600;
+    const startMs = Date.now();
+
+    const intervalId = setInterval(() => {
+      const progress = Math.min(1, (Date.now() - startMs) / durationMs);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+      setAnimatedA(speakerAScore * easedProgress);
+      setAnimatedB(speakerBScore * easedProgress);
+
+      if (progress >= 1) {
+        clearInterval(intervalId);
+      }
+    }, 40);
+
+    const winnerTimerId = setTimeout(() => {
+      setStage("winner");
+    }, durationMs + 300);
+
+    const summaryTimerId = setTimeout(() => {
+      setStage("summary");
+    }, durationMs + 2100);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(winnerTimerId);
+      clearTimeout(summaryTimerId);
+    };
+  }, [finalScore, speakerAScore, speakerBScore]);
+
+  if (!finalScore) {
+    return (
+      <div className="flex min-h-[520px] items-center justify-center bg-neutral-950 p-8 text-white">
+        <div className="text-center">
+          <div className="mx-auto h-14 w-14 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+
+          <h3 className="mt-6 text-3xl font-black">Calculating result...</h3>
+
+          <p className="mt-3 max-w-xl text-white/60">
+            The debate has ended. The scoring engine is preparing the final result.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[520px] bg-gradient-to-br from-neutral-950 via-neutral-900 to-black p-6 text-white">
+      <div className="mx-auto max-w-5xl">
+        <div className="text-center">
+          <div className="text-xs uppercase tracking-[0.35em] text-indigo-300">
+            Final Result
+          </div>
+
+          <h3 className="mt-2 text-4xl font-black">
+            {stage === "counting"
+              ? "Scores are being revealed..."
+              : finalScore.tie
+                ? "It is a tie"
+                : `${winnerName} wins`}
+          </h3>
+
+          <p className="mt-2 text-white/60">
+            Scores are based on the debate scoring dimensions and any penalties or bonuses.
+          </p>
+        </div>
+
+        <div className="mt-8 grid gap-5 md:grid-cols-2">
+          <ScoreCard
+            label="Speaker A"
+            name={speakerAName}
+            score={speakerAScore}
+            animatedScore={animatedA}
+          />
+
+          <ScoreCard
+            label="Speaker B"
+            name={speakerBName}
+            score={speakerBScore}
+            animatedScore={animatedB}
+          />
+        </div>
+
+        {stage === "winner" || stage === "summary" ? (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/10 p-6 text-center">
+            <div className="text-sm uppercase tracking-[0.25em] text-white/50">
+              Winner
+            </div>
+
+            <div className="mt-2 text-5xl font-black">
+              {finalScore.tie ? "Tie" : winnerName}
+            </div>
+          </div>
+        ) : null}
+
+        {stage === "summary" ? (
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
+              <h4 className="text-lg font-bold text-green-200">
+                Why the winner won
+              </h4>
+
+              <p className="mt-2 text-sm leading-6 text-white/75">
+                {explanation.winnerReason}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
+              <h4 className="text-lg font-bold text-red-200">
+                Where the loser fell short
+              </h4>
+
+              <p className="mt-2 text-sm leading-6 text-white/75">
+                {explanation.loserReason}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function CustomDailyCallInner({
   roomUrl,
   token,
@@ -154,6 +460,9 @@ function CustomDailyCallInner({
   currentRoundLabel,
   speakerAName,
   speakerBName,
+  showResultGraphic,
+  finalScore,
+  roundScores,
 }) {
   const callObject = useDaily();
   const meetingState = useMeetingState();
@@ -164,6 +473,14 @@ function CustomDailyCallInner({
 
   const joined = meetingState === "joined-meeting";
   const joiningNow = meetingState === "joining-meeting" || joining;
+
+  useEffect(() => {
+    if (!showResultGraphic || !joined || !callObject) {
+      return;
+    }
+
+    callObject.leave().catch(() => null);
+  }, [showResultGraphic, joined, callObject]);
 
   async function joinCall() {
     if (!callObject || !roomUrl || joined || joiningNow) {
@@ -212,14 +529,18 @@ function CustomDailyCallInner({
               </span>
 
               <span className="rounded-full bg-white/10 px-3 py-1">
-                {joined ? "Video connected" : "Not connected"}
+                {showResultGraphic
+                  ? "Result mode"
+                  : joined
+                    ? "Video connected"
+                    : "Not connected"}
               </span>
             </div>
           </div>
 
           <div className="shrink-0 text-right">
             <div className="text-xs uppercase tracking-[0.2em] text-white/50">
-              Timer
+              Countdown
             </div>
 
             <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
@@ -235,7 +556,14 @@ function CustomDailyCallInner({
         </div>
       ) : null}
 
-      {!joined ? (
+      {showResultGraphic ? (
+        <ResultGraphic
+          finalScore={finalScore}
+          roundScores={roundScores}
+          speakerAName={speakerAName}
+          speakerBName={speakerBName}
+        />
+      ) : !joined ? (
         <div className="flex min-h-[420px] items-center justify-center bg-neutral-900 p-6">
           <div className="max-w-md text-center">
             <h3 className="text-2xl font-semibold">Join the debate video</h3>
@@ -279,7 +607,7 @@ function CustomDailyCallInner({
 
       <DailyAudio />
 
-      <CallControls joined={joined} />
+      <CallControls joined={joined && !showResultGraphic} />
     </div>
   );
 }

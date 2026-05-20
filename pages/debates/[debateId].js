@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
 import { auth } from "@/lib/firebase";
@@ -31,6 +31,43 @@ function formatTimer(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function getDebateDurationSeconds(format, roundCount) {
+  const safeRoundCount = Math.max(1, Number(roundCount || 1));
+
+  if (format === "long") {
+    return safeRoundCount * 3 * 60;
+  }
+
+  return safeRoundCount * 1 * 60;
+}
+
+function getDefaultSpeakersScorePayload() {
+  return {
+    speakerA: {
+      dimensions: {
+        argumentQuality: 70,
+        factualAccuracy: 65,
+        rebuttalEffectiveness: 60,
+        rhetoricDelivery: 66,
+        topicConsistency: 72,
+      },
+      penalties: 0,
+      bonuses: 0,
+    },
+    speakerB: {
+      dimensions: {
+        argumentQuality: 68,
+        factualAccuracy: 67,
+        rebuttalEffectiveness: 62,
+        rhetoricDelivery: 64,
+        topicConsistency: 70,
+      },
+      penalties: 0,
+      bonuses: 0,
+    },
+  };
+}
+
 export default function DebateWorkspacePage() {
   const router = useRouter();
   const { debateId } = router.query;
@@ -45,37 +82,14 @@ export default function DebateWorkspacePage() {
   const [scorecard, setScorecard] = useState(null);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [timerReady, setTimerReady] = useState(false);
+
+  const autoFinishStartedRef = useRef(false);
 
   const [roundIdInput, setRoundIdInput] = useState("");
   const [speakersJson, setSpeakersJson] = useState(
-    JSON.stringify(
-      {
-        speakerA: {
-          dimensions: {
-            argumentQuality: 70,
-            factualAccuracy: 65,
-            rebuttalEffectiveness: 60,
-            rhetoricDelivery: 66,
-            topicConsistency: 72,
-          },
-          penalties: 0,
-          bonuses: 0,
-        },
-        speakerB: {
-          dimensions: {
-            argumentQuality: 68,
-            factualAccuracy: 67,
-            rebuttalEffectiveness: 62,
-            rhetoricDelivery: 64,
-            topicConsistency: 70,
-          },
-          penalties: 0,
-          bonuses: 0,
-        },
-      },
-      null,
-      2
-    )
+    JSON.stringify(getDefaultSpeakersScorePayload(), null, 2)
   );
 
   const [speakerUserId, setSpeakerUserId] = useState("");
@@ -113,69 +127,68 @@ export default function DebateWorkspacePage() {
     return openRound?.id || "";
   }, [debate]);
 
-  const liveJoinUrl = useMemo(() => {
+  const currentRound = useMemo(() => {
+    const rounds = debate?.rounds || [];
+    return rounds.find((round) => round.status !== "closed") || null;
+  }, [debate]);
+
+  const currentRoundLabel = currentRound
+    ? `Round ${currentRound.roundNumber}`
+    : debate?.status === "ended"
+      ? "Debate ended"
+      : "Not started";
+
+  const speakerA = participants.find((participant) => participant.seat === "speakerA");
+  const speakerB = participants.find((participant) => participant.seat === "speakerB");
+
+  const speakerAName = speakerA?.displayName || "Debater A";
+  const speakerBName = speakerB?.displayName || "Debater B";
+
+  const liveRoomUrl = useMemo(() => {
     const live = debate?.live;
 
     if (!live) {
       return "";
     }
 
+    if (live.roomUrl) {
+      return live.roomUrl;
+    }
+
     if (live.joinUrl) {
-      return live.joinUrl;
+      try {
+        const url = new URL(live.joinUrl);
+        return `${url.origin}${url.pathname}`;
+      } catch {
+        return live.joinUrl.split("?")[0];
+      }
     }
 
-    if (live.roomUrl && live.token) {
-      return `${live.roomUrl}?t=${live.token}`;
-    }
-
-    return live.roomUrl || "";
+    return "";
   }, [debate]);
 
-  const liveRoomUrl = useMemo(() => {
-  const live = debate?.live;
+  const liveToken = useMemo(() => {
+    const live = debate?.live;
 
-  if (!live) {
-    return "";
-  }
-
-  if (live.roomUrl) {
-    return live.roomUrl;
-  }
-
-  if (live.joinUrl) {
-    try {
-      const url = new URL(live.joinUrl);
-      return `${url.origin}${url.pathname}`;
-    } catch {
-      return live.joinUrl.split("?")[0];
-    }
-  }
-
-  return "";
-}, [debate]);
-
-const liveToken = useMemo(() => {
-  const live = debate?.live;
-
-  if (!live) {
-    return "";
-  }
-
-  if (live.token) {
-    return live.token;
-  }
-
-  if (live.joinUrl) {
-    try {
-      const url = new URL(live.joinUrl);
-      return url.searchParams.get("t") || "";
-    } catch {
+    if (!live) {
       return "";
     }
-  }
 
-  return "";
-}, [debate]);
+    if (live.token) {
+      return live.token;
+    }
+
+    if (live.joinUrl) {
+      try {
+        const url = new URL(live.joinUrl);
+        return url.searchParams.get("t") || "";
+      } catch {
+        return "";
+      }
+    }
+
+    return "";
+  }, [debate]);
 
   const inviteLink = useMemo(() => {
     if (typeof window === "undefined" || !debateId) {
@@ -184,23 +197,6 @@ const liveToken = useMemo(() => {
 
     return `${window.location.origin}/debates/${debateId}/join`;
   }, [debateId]);
-
-  const currentRound = useMemo(() => {
-  const rounds = debate?.rounds || [];
-  return rounds.find((round) => round.status !== "closed") || null;
-}, [debate]);
-
-const currentRoundLabel = currentRound
-  ? `Round ${currentRound.roundNumber}`
-  : debate?.status === "ended"
-    ? "Debate ended"
-    : "Not started";
-
-const speakerA = participants.find((participant) => participant.seat === "speakerA");
-const speakerB = participants.find((participant) => participant.seat === "speakerB");
-
-const speakerAName = speakerA?.displayName || "Debater A";
-const speakerBName = speakerB?.displayName || "Debater B";
 
   const estimatedDurationLabel = useMemo(() => {
     const format = debate?.format || "short";
@@ -215,6 +211,10 @@ const speakerBName = speakerB?.displayName || "Debater B";
 
     return `${totalMinutes} min estimated`;
   }, [debate?.format, roundCount]);
+
+  const shouldShowResultGraphic =
+    debate?.status === "ended" ||
+    (debate?.status === "live" && timerReady && remainingSeconds === 0);
 
   const resultSummary = useMemo(() => {
     const finalScore = debate?.finalScore;
@@ -240,13 +240,20 @@ const speakerBName = speakerB?.displayName || "Debater B";
       };
     }
 
+    const winnerName =
+      winner.speakerId === "speakerA"
+        ? speakerAName
+        : winner.speakerId === "speakerB"
+          ? speakerBName
+          : winner.speakerId;
+
     return {
-      title: `${winner.speakerId} won the debate`,
-      body: `${winner.speakerId} won with a score of ${Number(winner.score).toFixed(
+      title: `${winnerName} won the debate`,
+      body: `${winnerName} won with a score of ${Number(winner.score).toFixed(
         1
-      )}. The winner is based on the scored round dimensions, penalties, bonuses and final confidence factor.`,
+      )}. The winner is based on the scored debate dimensions, penalties, bonuses and final confidence factor.`,
     };
-  }, [debate?.finalScore]);
+  }, [debate?.finalScore, speakerAName, speakerBName]);
 
   useEffect(() => {
     if (!roundIdInput && firstOpenRoundId) {
@@ -256,27 +263,43 @@ const speakerBName = speakerB?.displayName || "Debater B";
 
   useEffect(() => {
     if (debate?.status !== "live" || !debate?.startedAt) {
+      setTimerReady(false);
       return;
     }
 
-    function updateElapsed() {
+    const totalSeconds = getDebateDurationSeconds(debate?.format, roundCount);
+
+    function updateTimer() {
       const startedAtMs = new Date(debate.startedAt).getTime();
 
       if (!Number.isFinite(startedAtMs)) {
         setElapsedSeconds(0);
+        setRemainingSeconds(totalSeconds);
+        setTimerReady(true);
         return;
       }
 
       const diffSeconds = Math.floor((Date.now() - startedAtMs) / 1000);
-      setElapsedSeconds(Math.max(0, diffSeconds));
+      const elapsed = Math.max(0, diffSeconds);
+      const remaining = Math.max(0, totalSeconds - elapsed);
+
+      setElapsedSeconds(elapsed);
+      setRemainingSeconds(remaining);
+      setTimerReady(true);
     }
 
-    updateElapsed();
+    updateTimer();
 
-    const id = setInterval(updateElapsed, 1000);
+    const id = setInterval(updateTimer, 1000);
 
     return () => clearInterval(id);
-  }, [debate?.status, debate?.startedAt]);
+  }, [debate?.status, debate?.startedAt, debate?.format, roundCount]);
+
+  useEffect(() => {
+    if (debate?.status !== "live") {
+      autoFinishStartedRef.current = false;
+    }
+  }, [debate?.status]);
 
   async function loadWorkspace({ silent = false } = {}) {
     if (!debateId) {
@@ -367,6 +390,74 @@ const speakerBName = speakerB?.displayName || "Debater B";
     }
   }
 
+  function getScorePayloadForAutoFinish() {
+    try {
+      const parsed = JSON.parse(speakersJson);
+
+      if (parsed && typeof parsed === "object" && Object.keys(parsed).length) {
+        return parsed;
+      }
+
+      return getDefaultSpeakersScorePayload();
+    } catch {
+      return getDefaultSpeakersScorePayload();
+    }
+  }
+
+  async function onTimerFinished() {
+    if (!isOwner || autoFinishStartedRef.current || debate?.status !== "live") {
+      return;
+    }
+
+    autoFinishStartedRef.current = true;
+
+    try {
+      const existingRoundScores = debate?.roundScores || [];
+
+      if (!existingRoundScores.length && currentRound?.id) {
+        await callApi(`/api/debates/${debateId}/rounds/${currentRound.id}/close`, "POST", {
+          speakers: getScorePayloadForAutoFinish(),
+        });
+      }
+
+      await callApi(`/api/debates/${debateId}/end`, "POST");
+
+      try {
+        await callApi(`/api/debates/${debateId}/score/final`, "POST", {
+          confidenceFactor: 1,
+        });
+
+        setNotice("Debate ended and final score computed.");
+      } catch (scoreError) {
+        setError(
+          `Debate ended, but final score could not be computed: ${scoreError.message}`
+        );
+      }
+
+      await loadWorkspace();
+    } catch (e) {
+      setError(e.message || "Could not finish debate.");
+    }
+  }
+
+  useEffect(() => {
+    if (debate?.status !== "live") {
+      return;
+    }
+
+    if (!timerReady) {
+      return;
+    }
+
+    if (remainingSeconds > 0) {
+      return;
+    }
+
+    onTimerFinished();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingSeconds, timerReady, debate?.status]);
+
   async function copyInviteLink() {
     try {
       if (!inviteLink) {
@@ -389,6 +480,8 @@ const speakerBName = speakerB?.displayName || "Debater B";
       if (!hasTwoParticipants) {
         throw new Error("You need two participants before starting the debate.");
       }
+
+      autoFinishStartedRef.current = false;
 
       await callApi(`/api/debates/${debateId}/start`, "POST");
 
@@ -644,7 +737,7 @@ const speakerBName = speakerB?.displayName || "Debater B";
             </div>
           ) : null}
 
-          {!isOwner && !liveJoinUrl ? (
+          {!isOwner && !liveRoomUrl ? (
             <div className="rounded-xl border p-5 text-center">
               <h2 className="text-xl font-semibold">Waiting for host to start video</h2>
               <p className="mt-2 text-gray-600">
@@ -655,18 +748,21 @@ const speakerBName = speakerB?.displayName || "Debater B";
           ) : null}
 
           {liveRoomUrl ? (
-  <CustomDailyCall
-    roomUrl={liveRoomUrl}
-    token={liveToken}
-    userName={user?.displayName || user?.email || "Debater"}
-    debateTitle={debate?.title || "Untitled debate"}
-    debateStatus={debate?.status}
-    timerText={formatTimer(elapsedSeconds)}
-    currentRoundLabel={currentRoundLabel}
-    speakerAName={speakerAName}
-    speakerBName={speakerBName}
-  />
-) : null}
+            <CustomDailyCall
+              roomUrl={liveRoomUrl}
+              token={liveToken}
+              userName={user?.displayName || user?.email || "Debater"}
+              debateTitle={debate?.title || "Untitled debate"}
+              debateStatus={debate?.status}
+              timerText={formatTimer(remainingSeconds)}
+              currentRoundLabel={currentRoundLabel}
+              speakerAName={speakerAName}
+              speakerBName={speakerBName}
+              showResultGraphic={shouldShowResultGraphic}
+              finalScore={debate?.finalScore}
+              roundScores={debate?.roundScores || []}
+            />
+          ) : null}
 
           {debate?.status === "ended" ? (
             <div className="rounded-xl border p-5 space-y-3">
