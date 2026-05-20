@@ -116,7 +116,8 @@ export default function DebateWorkspacePage() {
     workspace?.meta?.isParticipant ||
     participants.some((participant) => participant.userUid === user?.uid);
 
-  const isWaitingForOpponent = debate?.status === "scheduled" && !hasTwoParticipants;
+  const isWaitingForOpponent =
+    debate?.status === "scheduled" && !hasTwoParticipants;
 
   const canStartDebate = debate?.status === "scheduled" && hasTwoParticipants;
 
@@ -138,8 +139,12 @@ export default function DebateWorkspacePage() {
       ? "Debate ended"
       : "Not started";
 
-  const speakerA = participants.find((participant) => participant.seat === "speakerA");
-  const speakerB = participants.find((participant) => participant.seat === "speakerB");
+  const speakerA = participants.find(
+    (participant) => participant.seat === "speakerA"
+  );
+  const speakerB = participants.find(
+    (participant) => participant.seat === "speakerB"
+  );
 
   const speakerAName = speakerA?.displayName || "Debater A";
   const speakerBName = speakerB?.displayName || "Debater B";
@@ -404,6 +409,24 @@ export default function DebateWorkspacePage() {
     }
   }
 
+  async function ensureAtLeastOneRoundScore() {
+    const existingRoundScores = debate?.roundScores || [];
+
+    if (existingRoundScores.length) {
+      return;
+    }
+
+    const targetRoundId = currentRound?.id || firstOpenRoundId || roundIdInput;
+
+    if (!targetRoundId) {
+      throw new Error("No round found to score.");
+    }
+
+    await callApi(`/api/debates/${debateId}/rounds/${targetRoundId}/close`, "POST", {
+      speakers: getScorePayloadForAutoFinish(),
+    });
+  }
+
   async function onTimerFinished() {
     if (!isOwner || autoFinishStartedRef.current || debate?.status !== "live") {
       return;
@@ -412,28 +435,15 @@ export default function DebateWorkspacePage() {
     autoFinishStartedRef.current = true;
 
     try {
-      const existingRoundScores = debate?.roundScores || [];
-
-      if (!existingRoundScores.length && currentRound?.id) {
-        await callApi(`/api/debates/${debateId}/rounds/${currentRound.id}/close`, "POST", {
-          speakers: getScorePayloadForAutoFinish(),
-        });
-      }
+      await ensureAtLeastOneRoundScore();
 
       await callApi(`/api/debates/${debateId}/end`, "POST");
 
-      try {
-        await callApi(`/api/debates/${debateId}/score/final`, "POST", {
-          confidenceFactor: 1,
-        });
+      await callApi(`/api/debates/${debateId}/score/final`, "POST", {
+        confidenceFactor: 1,
+      });
 
-        setNotice("Debate ended and final score computed.");
-      } catch (scoreError) {
-        setError(
-          `Debate ended, but final score could not be computed: ${scoreError.message}`
-        );
-      }
-
+      setNotice("Debate ended and final score computed.");
       await loadWorkspace();
     } catch (e) {
       setError(e.message || "Could not finish debate.");
@@ -498,6 +508,10 @@ export default function DebateWorkspacePage() {
         throw new Error("Only the debate owner can end the debate.");
       }
 
+      if (debate?.status === "live") {
+        await ensureAtLeastOneRoundScore();
+      }
+
       await callApi(`/api/debates/${debateId}/end`, "POST");
 
       setNotice("Debate ended.");
@@ -550,6 +564,8 @@ export default function DebateWorkspacePage() {
       if (!isOwner) {
         throw new Error("Only the debate owner can compute the final score.");
       }
+
+      await ensureAtLeastOneRoundScore();
 
       await callApi(`/api/debates/${debateId}/score/final`, "POST", {
         confidenceFactor: 1,
