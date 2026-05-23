@@ -41,33 +41,6 @@ function getDebateDurationSeconds(format, roundCount) {
   return safeRoundCount * 1 * 60;
 }
 
-function getDefaultSpeakersScorePayload() {
-  return {
-    speakerA: {
-      dimensions: {
-        argumentQuality: 70,
-        factualAccuracy: 65,
-        rebuttalEffectiveness: 60,
-        rhetoricDelivery: 66,
-        topicConsistency: 72,
-      },
-      penalties: 0,
-      bonuses: 0,
-    },
-    speakerB: {
-      dimensions: {
-        argumentQuality: 68,
-        factualAccuracy: 67,
-        rebuttalEffectiveness: 62,
-        rhetoricDelivery: 64,
-        topicConsistency: 70,
-      },
-      penalties: 0,
-      bonuses: 0,
-    },
-  };
-}
-
 export default function DebateWorkspacePage() {
   const router = useRouter();
   const { debateId } = router.query;
@@ -80,6 +53,7 @@ export default function DebateWorkspacePage() {
 
   const [workspace, setWorkspace] = useState(null);
   const [scorecard, setScorecard] = useState(null);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
@@ -89,7 +63,34 @@ export default function DebateWorkspacePage() {
 
   const [roundIdInput, setRoundIdInput] = useState("");
   const [speakersJson, setSpeakersJson] = useState(
-    JSON.stringify(getDefaultSpeakersScorePayload(), null, 2)
+    JSON.stringify(
+      {
+        speakerA: {
+          dimensions: {
+            argumentQuality: 70,
+            factualAccuracy: 65,
+            rebuttalEffectiveness: 60,
+            rhetoricDelivery: 66,
+            topicConsistency: 72,
+          },
+          penalties: 0,
+          bonuses: 0,
+        },
+        speakerB: {
+          dimensions: {
+            argumentQuality: 68,
+            factualAccuracy: 67,
+            rebuttalEffectiveness: 62,
+            rhetoricDelivery: 64,
+            topicConsistency: 70,
+          },
+          penalties: 0,
+          bonuses: 0,
+        },
+      },
+      null,
+      2
+    )
   );
 
   const [speakerUserId, setSpeakerUserId] = useState("");
@@ -142,6 +143,7 @@ export default function DebateWorkspacePage() {
   const speakerA = participants.find(
     (participant) => participant.seat === "speakerA"
   );
+
   const speakerB = participants.find(
     (participant) => participant.seat === "speakerB"
   );
@@ -240,8 +242,10 @@ export default function DebateWorkspacePage() {
 
     if (finalScore.tie) {
       return {
-        title: "Debate ended in a tie",
-        body: "Both sides finished with the same score.",
+        title: "Debate ended in a draw",
+        body:
+          finalScore.explanation?.winnerReason ||
+          "The debate was marked as a draw based on the captured transcript.",
       };
     }
 
@@ -254,9 +258,11 @@ export default function DebateWorkspacePage() {
 
     return {
       title: `${winnerName} won the debate`,
-      body: `${winnerName} won with a score of ${Number(winner.score).toFixed(
-        1
-      )}. The winner is based on the scored debate dimensions, penalties, bonuses and final confidence factor.`,
+      body:
+        finalScore.explanation?.winnerReason ||
+        `${winnerName} won with a score of ${Number(winner.score).toFixed(
+          1
+        )}. The winner is based on the captured transcript.`,
     };
   }, [debate?.finalScore, speakerAName, speakerBName]);
 
@@ -395,36 +401,45 @@ export default function DebateWorkspacePage() {
     }
   }
 
-  function getScorePayloadForAutoFinish() {
-    try {
-      const parsed = JSON.parse(speakersJson);
-
-      if (parsed && typeof parsed === "object" && Object.keys(parsed).length) {
-        return parsed;
-      }
-
-      return getDefaultSpeakersScorePayload();
-    } catch {
-      return getDefaultSpeakersScorePayload();
-    }
-  }
-
-  async function ensureAtLeastOneRoundScore() {
-    const existingRoundScores = debate?.roundScores || [];
-
-    if (existingRoundScores.length) {
+  async function saveDailyTranscriptSegment(segment) {
+    if (!isOwner || !debateId) {
       return;
     }
 
-    const targetRoundId = currentRound?.id || firstOpenRoundId || roundIdInput;
+    const text = String(segment?.text || "").trim();
 
-    if (!targetRoundId) {
-      throw new Error("No round found to score.");
+    if (!text) {
+      return;
     }
 
-    await callApi(`/api/debates/${debateId}/rounds/${targetRoundId}/close`, "POST", {
-      speakers: getScorePayloadForAutoFinish(),
-    });
+    try {
+      const res = await fetch(`/api/debates/${debateId}/transcript/segments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getAuthHeaders()),
+        },
+        body: JSON.stringify({
+          segments: [
+            {
+              speakerUserId: segment.speakerUserId || null,
+              startMs: Number(segment.startMs || Date.now()),
+              endMs: Number(segment.endMs || Date.now() + 1000),
+              text,
+              confidence: Number(segment.confidence || 0.9),
+            },
+          ],
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to save transcript segment");
+      }
+    } catch (e) {
+      setError(e.message || "Could not save transcript.");
+    }
   }
 
   async function onTimerFinished() {
@@ -435,15 +450,13 @@ export default function DebateWorkspacePage() {
     autoFinishStartedRef.current = true;
 
     try {
-      await ensureAtLeastOneRoundScore();
-
       await callApi(`/api/debates/${debateId}/end`, "POST");
 
       await callApi(`/api/debates/${debateId}/score/final`, "POST", {
         confidenceFactor: 1,
       });
 
-      setNotice("Debate ended and final score computed.");
+      setNotice("Debate ended and transcript-based final score computed.");
       await loadWorkspace();
     } catch (e) {
       setError(e.message || "Could not finish debate.");
@@ -508,13 +521,13 @@ export default function DebateWorkspacePage() {
         throw new Error("Only the debate owner can end the debate.");
       }
 
-      if (debate?.status === "live") {
-        await ensureAtLeastOneRoundScore();
-      }
-
       await callApi(`/api/debates/${debateId}/end`, "POST");
 
-      setNotice("Debate ended.");
+      await callApi(`/api/debates/${debateId}/score/final`, "POST", {
+        confidenceFactor: 1,
+      });
+
+      setNotice("Debate ended and transcript-based final score computed.");
       await loadWorkspace();
     } catch (e) {
       setError(e.message);
@@ -565,13 +578,11 @@ export default function DebateWorkspacePage() {
         throw new Error("Only the debate owner can compute the final score.");
       }
 
-      await ensureAtLeastOneRoundScore();
-
       await callApi(`/api/debates/${debateId}/score/final`, "POST", {
         confidenceFactor: 1,
       });
 
-      setNotice("Final score computed.");
+      setNotice("Transcript-based final score computed.");
       await loadWorkspace();
     } catch (e) {
       setError(e.message);
@@ -663,7 +674,8 @@ export default function DebateWorkspacePage() {
             <div className="text-sm text-gray-600 mt-1">
               Rounds: {roundCount} · Closed: {closedRoundCount} · Live session:{" "}
               {hasLiveSession ? "yes" : "no"} · Participants: {participants.length}/2 ·{" "}
-              Role: {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"}
+              Role: {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·{" "}
+              Duration: {estimatedDurationLabel}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -777,6 +789,8 @@ export default function DebateWorkspacePage() {
               showResultGraphic={shouldShowResultGraphic}
               finalScore={debate?.finalScore}
               roundScores={debate?.roundScores || []}
+              isOwner={isOwner}
+              onTranscriptSegment={saveDailyTranscriptSegment}
             />
           ) : null}
 
@@ -792,9 +806,51 @@ export default function DebateWorkspacePage() {
               ) : (
                 <p className="text-gray-600">
                   The debate has ended. The host should click Compute final score to generate the
-                  result.
+                  transcript-based result.
                 </p>
               )}
+
+              <button
+                onClick={() => setShowTranscript((current) => !current)}
+                className="rounded border px-3 py-2"
+              >
+                {showTranscript ? "Hide transcript" : "Reveal transcript"}
+              </button>
+
+              {showTranscript ? (
+                <div className="mt-4 rounded-lg bg-gray-50 p-4">
+                  <h3 className="font-semibold">Debate transcript</h3>
+
+                  {(workspace?.transcriptSegments || []).length ? (
+                    <div className="mt-3 space-y-3">
+                      {(workspace?.transcriptSegments || []).map((segment) => {
+                        const name =
+                          segment.speakerUserId === "speakerA"
+                            ? speakerAName
+                            : segment.speakerUserId === "speakerB"
+                              ? speakerBName
+                              : "Unknown speaker";
+
+                        return (
+                          <div key={segment.id || `${segment.startMs}-${segment.text}`}>
+                            <div className="text-sm font-medium text-gray-800">
+                              {name}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {segment.text}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-600">
+                      No transcript was captured for this debate. The score will be zero or a draw
+                      because there was no speech to judge.
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -826,13 +882,13 @@ export default function DebateWorkspacePage() {
               </div>
 
               <div className="rounded-xl border p-4 space-y-3">
-                <h2 className="text-xl font-medium">Transcript</h2>
+                <h2 className="text-xl font-medium">Manual Transcript</h2>
 
                 <input
                   className="w-full rounded border p-2"
                   value={speakerUserId}
                   onChange={(e) => setSpeakerUserId(e.target.value)}
-                  placeholder="speakerUserId, optional"
+                  placeholder="speakerA or speakerB"
                 />
 
                 <textarea

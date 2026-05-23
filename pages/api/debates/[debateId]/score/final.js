@@ -1,85 +1,256 @@
 import { allowMethods, badRequest, handleError, requireDebateOwner } from "@/lib/debates/http";
-import { computeFinalScore, computeSpeakerScore, getWeights } from "@/lib/debates/scoring";
-import { closeRound, getDebate, setFinalScore } from "@/lib/debates/store";
+import { getDebate, listTranscriptSegments, setFinalScore } from "@/lib/debates/store";
 
-function getDefaultSpeakersScorePayload() {
+const DIMENSIONS = [
+  "argumentQuality",
+  "factualAccuracy",
+  "rebuttalEffectiveness",
+  "rhetoricDelivery",
+  "topicConsistency",
+];
+
+const EVIDENCE_WORDS = [
+  "because",
+  "therefore",
+  "evidence",
+  "example",
+  "data",
+  "study",
+  "research",
+  "statistics",
+  "statistic",
+  "percent",
+  "%",
+  "according",
+  "shows",
+  "proves",
+  "demonstrates",
+];
+
+const REBUTTAL_WORDS = [
+  "but",
+  "however",
+  "although",
+  "disagree",
+  "respond",
+  "response",
+  "counter",
+  "opponent",
+  "you said",
+  "that ignores",
+  "that assumes",
+  "not true",
+];
+
+function words(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9%£$.\s-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function sentences(text) {
+  return String(text || "")
+    .split(/[.!?]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function countMatches(text, terms) {
+  const lower = String(text || "").toLowerCase();
+
+  return terms.reduce((count, term) => {
+    return lower.includes(term) ? count + 1 : count;
+  }, 0);
+}
+
+function getTopicTerms(debate) {
+  const source = `${debate.title || ""} ${debate.motionText || ""}`;
+  const stopWords = new Set([
+    "the",
+    "and",
+    "or",
+    "a",
+    "an",
+    "to",
+    "of",
+    "in",
+    "on",
+    "for",
+    "is",
+    "are",
+    "should",
+    "we",
+    "be",
+    "it",
+    "this",
+    "that",
+    "do",
+    "does",
+    "with",
+  ]);
+
+  return Array.from(new Set(words(source)))
+    .filter((word) => word.length > 3)
+    .filter((word) => !stopWords.has(word))
+    .slice(0, 12);
+}
+
+function clamp0to100(value) {
+  return Math.max(0, Math.min(100, Number(value || 0)));
+}
+
+function scoreSpeakerFromTranscript({ speakerId, text, debate, opponentText }) {
+  const wordList = words(text);
+  const sentenceList = sentences(text);
+  const wordCount = wordList.length;
+
+  if (wordCount < 5) {
+    return {
+      speakerId,
+      score: 0,
+      dimensions: {
+        argumentQuality: 0,
+        factualAccuracy: 0,
+        rebuttalEffectiveness: 0,
+        rhetoricDelivery: 0,
+        topicConsistency: 0,
+      },
+      wordCount,
+      summary: "No meaningful speech was detected for this speaker.",
+    };
+  }
+
+  const evidenceMatches = countMatches(text, EVIDENCE_WORDS);
+  const rebuttalMatches = countMatches(text, REBUTTAL_WORDS);
+  const topicTerms = getTopicTerms(debate);
+  const topicMatches = topicTerms.filter((term) =>
+    wordList.includes(term.toLowerCase())
+  ).length;
+
+  const avgSentenceLength = sentenceList.length
+    ? wordCount / sentenceList.length
+    : wordCount;
+
+  const hasNumbers = /\d/.test(text);
+  const hasOpponentSpeech = words(opponentText).length >= 5;
+
+  const argumentQuality = clamp0to100(
+    10 + Math.min(35, wordCount * 0.9) + Math.min(35, evidenceMatches * 9)
+  );
+
+  const factualAccuracy = clamp0to100(
+    5 + Math.min(35, evidenceMatches * 10) + (hasNumbers ? 15 : 0)
+  );
+
+  const rebuttalEffectiveness = clamp0to100(
+    hasOpponentSpeech
+      ? 5 + Math.min(45, rebuttalMatches * 12) + Math.min(20, wordCount * 0.3)
+      : Math.min(20, rebuttalMatches * 8)
+  );
+
+  const rhetoricDelivery = clamp0to100(
+    10 +
+      Math.min(35, sentenceList.length * 6) +
+      (avgSentenceLength >= 6 && avgSentenceLength <= 28 ? 25 : 5)
+  );
+
+  const topicConsistency = clamp0to100(
+    topicTerms.length
+      ? 10 + Math.min(65, (topicMatches / topicTerms.length) * 100)
+      : 45
+  );
+
+  const dimensions = {
+    argumentQuality,
+    factualAccuracy,
+    rebuttalEffectiveness,
+    rhetoricDelivery,
+    topicConsistency,
+  };
+
+  const score = clamp0to100(
+    argumentQuality * 0.3 +
+      factualAccuracy * 0.2 +
+      rebuttalEffectiveness * 0.2 +
+      rhetoricDelivery * 0.15 +
+      topicConsistency * 0.15
+  );
+
   return {
-    speakerA: {
-      dimensions: {
-        argumentQuality: 70,
-        factualAccuracy: 65,
-        rebuttalEffectiveness: 60,
-        rhetoricDelivery: 66,
-        topicConsistency: 72,
-      },
-      penalties: 0,
-      bonuses: 0,
-    },
-    speakerB: {
-      dimensions: {
-        argumentQuality: 68,
-        factualAccuracy: 67,
-        rebuttalEffectiveness: 62,
-        rhetoricDelivery: 64,
-        topicConsistency: 70,
-      },
-      penalties: 0,
-      bonuses: 0,
-    },
+    speakerId,
+    score,
+    dimensions,
+    wordCount,
+    summary: `Scored from ${wordCount} transcript words.`,
   };
 }
 
-function scoreSpeakers({ speakers, weights }) {
-  return Object.fromEntries(
-    Object.entries(speakers).map(([speakerId, payload]) => {
-      const dimensions = payload?.dimensions || {};
+function buildTranscriptText(segments, speakerId) {
+  return (segments || [])
+    .filter((segment) => segment.speakerUserId === speakerId)
+    .map((segment) => segment.text)
+    .join(" ")
+    .trim();
+}
 
-      const normalizedDimensions = {
-        argumentQuality: Number(dimensions.argumentQuality ?? 0),
-        factualAccuracy: Number(dimensions.factualAccuracy ?? 0),
-        rebuttalEffectiveness: Number(dimensions.rebuttalEffectiveness ?? 0),
-        rhetoricDelivery: Number(dimensions.rhetoricDelivery ?? 0),
-        topicConsistency: Number(dimensions.topicConsistency ?? 0),
-      };
+function buildExplanation({ speakerAResult, speakerBResult, speakerAName, speakerBName, tie }) {
+  const aScore = speakerAResult.score;
+  const bScore = speakerBResult.score;
 
-      const isValidDimension = Object.values(normalizedDimensions).every(
-        (value) => Number.isFinite(value) && value >= 0 && value <= 100
-      );
+  if (aScore === 0 && bScore === 0) {
+    return {
+      winnerReason:
+        "No winner was awarded because the transcript did not contain meaningful speech from either side.",
+      loserReason:
+        "Both speakers need to make clear arguments before the debate can be judged.",
+    };
+  }
 
-      if (!isValidDimension) {
-        throw new Error("Invalid dimensions: scores must be numbers between 0 and 100");
-      }
+  if (tie) {
+    return {
+      winnerReason:
+        "The debate was marked as a draw because the final scores were too close to award a clear winner.",
+      loserReason:
+        "Both sides were relatively close. Stronger evidence, clearer rebuttals or more developed arguments would be needed to separate them.",
+    };
+  }
 
-      const penalties = Number(payload?.penalties ?? 0);
-      const bonuses = Number(payload?.bonuses ?? 0);
+  const winner = aScore > bScore ? speakerAResult : speakerBResult;
+  const loser = aScore > bScore ? speakerBResult : speakerAResult;
 
-      if (
-        !Number.isFinite(penalties) ||
-        penalties < 0 ||
-        !Number.isFinite(bonuses) ||
-        bonuses < 0
-      ) {
-        throw new Error("Invalid penalties/bonuses: values must be non-negative numbers");
-      }
+  const winnerName = winner.speakerId === "speakerA" ? speakerAName : speakerBName;
+  const loserName = loser.speakerId === "speakerA" ? speakerAName : speakerBName;
 
-      const roundScore = computeSpeakerScore({
-        dimensions: normalizedDimensions,
-        penalties,
-        bonuses,
-        weights,
-      });
+  const dimensionGaps = DIMENSIONS.map((key) => ({
+    key,
+    gap: Number(winner.dimensions[key] || 0) - Number(loser.dimensions[key] || 0),
+  })).sort((a, b) => b.gap - a.gap);
 
-      return [
-        speakerId,
-        {
-          dimensions: normalizedDimensions,
-          penalties,
-          bonuses,
-          roundScore,
-        },
-      ];
-    })
-  );
+  const labelMap = {
+    argumentQuality: "argument quality",
+    factualAccuracy: "evidence usage",
+    rebuttalEffectiveness: "rebuttal effectiveness",
+    rhetoricDelivery: "clarity and delivery",
+    topicConsistency: "staying on topic",
+  };
+
+  const strengths = dimensionGaps
+    .filter((item) => item.gap > 0)
+    .slice(0, 2)
+    .map((item) => labelMap[item.key]);
+
+  const weaknesses = strengths.length ? strengths : ["overall substance"];
+
+  return {
+    winnerReason: `${winnerName} won because their transcript showed stronger ${weaknesses.join(
+      " and "
+    )}.`,
+    loserReason: `${loserName} fell behind on ${weaknesses.join(
+      " and "
+    )}. Their score can be improved by making clearer claims, using better evidence and directly responding to the opposing argument.`,
+  };
 }
 
 export default async function handler(req, res) {
@@ -88,7 +259,7 @@ export default async function handler(req, res) {
   try {
     const { debateId } = req.query;
 
-    let debate = await getDebate(debateId);
+    const debate = await getDebate(debateId);
 
     if (!(await requireDebateOwner(req, res, debate))) return;
 
@@ -102,48 +273,67 @@ export default async function handler(req, res) {
       return badRequest(res, "confidenceFactor must be a number between 0.9 and 1.0");
     }
 
-    if (!debate.roundScores.length) {
-      const roundToScore =
-        (debate.rounds || []).find((round) => round.status !== "closed") ||
-        (debate.rounds || [])[0];
+    const transcriptSegments = await listTranscriptSegments(debateId);
 
-      if (!roundToScore?.id) {
-        return badRequest(res, "No round found to score");
-      }
+    const speakerAText = buildTranscriptText(transcriptSegments, "speakerA");
+    const speakerBText = buildTranscriptText(transcriptSegments, "speakerB");
 
-      const weights = getWeights(debate.format, debate.domain);
-      const scoredSpeakers = scoreSpeakers({
-        speakers: getDefaultSpeakersScorePayload(),
-        weights,
-      });
+    const speakerAResult = scoreSpeakerFromTranscript({
+      speakerId: "speakerA",
+      text: speakerAText,
+      debate,
+      opponentText: speakerBText,
+    });
 
-      await closeRound(debateId, roundToScore.id, {
-        roundId: roundToScore.id,
-        weights,
-        speakers: scoredSpeakers,
-        computedAt: new Date().toISOString(),
-      });
+    const speakerBResult = scoreSpeakerFromTranscript({
+      speakerId: "speakerB",
+      text: speakerBText,
+      debate,
+      opponentText: speakerAText,
+    });
 
-      debate = await getDebate(debateId);
-    }
+    const aScore = clamp0to100(speakerAResult.score * confidenceFactor);
+    const bScore = clamp0to100(speakerBResult.score * confidenceFactor);
 
-    if (!debate.roundScores.length) {
-      return badRequest(res, "No round scores recorded yet");
-    }
+    speakerAResult.score = aScore;
+    speakerBResult.score = bScore;
 
-    const finalScore = computeFinalScore({ debate, confidenceFactor });
+    const scoreDifference = Math.abs(aScore - bScore);
+    const tie = scoreDifference <= 3 || (aScore < 10 && bScore < 10);
+
+    const leaderboard = [
+      { speakerId: "speakerA", score: aScore },
+      { speakerId: "speakerB", score: bScore },
+    ].sort((a, b) => b.score - a.score);
+
+    const explanation = buildExplanation({
+      speakerAResult,
+      speakerBResult,
+      speakerAName: "Speaker A",
+      speakerBName: "Speaker B",
+      tie,
+    });
+
+    const finalScore = {
+      confidenceFactor,
+      source: "daily_transcript",
+      transcriptSegmentCount: transcriptSegments.length,
+      transcriptWordCount: speakerAResult.wordCount + speakerBResult.wordCount,
+      leaderboard,
+      winnerSpeakerId: tie ? null : leaderboard[0]?.speakerId || null,
+      tie,
+      speakerBreakdown: {
+        speakerA: speakerAResult,
+        speakerB: speakerBResult,
+      },
+      explanation,
+      computedAt: new Date().toISOString(),
+    };
 
     await setFinalScore(debateId, finalScore);
 
     return res.status(200).json({ finalScore });
   } catch (error) {
-    if (
-      error?.message?.startsWith("Invalid dimensions") ||
-      error?.message?.startsWith("Invalid penalties/bonuses")
-    ) {
-      return badRequest(res, error.message);
-    }
-
     return handleError(res, error);
   }
 }

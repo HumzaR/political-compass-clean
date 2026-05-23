@@ -12,7 +12,7 @@ import {
 
 const DIMENSION_LABELS = {
   argumentQuality: "argument quality",
-  factualAccuracy: "factual accuracy",
+  factualAccuracy: "evidence usage",
   rebuttalEffectiveness: "rebuttal effectiveness",
   rhetoricDelivery: "delivery and rhetoric",
   topicConsistency: "topic consistency",
@@ -27,14 +27,8 @@ function getScoreForSpeaker(finalScore, speakerId) {
 }
 
 function getSpeakerName(speakerId, speakerAName, speakerBName) {
-  if (speakerId === "speakerA") {
-    return speakerAName;
-  }
-
-  if (speakerId === "speakerB") {
-    return speakerBName;
-  }
-
+  if (speakerId === "speakerA") return speakerAName;
+  if (speakerId === "speakerB") return speakerBName;
   return speakerId || "Unknown speaker";
 }
 
@@ -45,9 +39,7 @@ function aggregateDimensions(roundScores, speakerId) {
   (roundScores || []).forEach((roundScore) => {
     const dimensions = roundScore?.speakers?.[speakerId]?.dimensions;
 
-    if (!dimensions) {
-      return;
-    }
+    if (!dimensions) return;
 
     Object.keys(DIMENSION_LABELS).forEach((key) => {
       totals[key] = (totals[key] || 0) + Number(dimensions[key] || 0);
@@ -56,9 +48,7 @@ function aggregateDimensions(roundScores, speakerId) {
     count += 1;
   });
 
-  if (!count) {
-    return {};
-  }
+  if (!count) return {};
 
   return Object.fromEntries(
     Object.entries(totals).map(([key, value]) => [key, value / count])
@@ -71,6 +61,10 @@ function buildResultExplanation({
   speakerAName,
   speakerBName,
 }) {
+  if (finalScore?.explanation) {
+    return finalScore.explanation;
+  }
+
   if (!finalScore) {
     return {
       winnerReason: "The scoring engine is still calculating the result.",
@@ -82,9 +76,9 @@ function buildResultExplanation({
   if (finalScore.tie) {
     return {
       winnerReason:
-        "Both debaters finished with the same score, so the debate has been marked as a tie.",
+        "No winner was awarded because the scores were too close.",
       loserReason:
-        "Neither side clearly outperformed the other across the scoring dimensions.",
+        "Both sides need stronger arguments, clearer evidence and better rebuttals.",
     };
   }
 
@@ -134,6 +128,41 @@ function buildResultExplanation({
       " and "
     )}, which reduced their final score.`,
   };
+}
+
+function extractTranscriptText(event) {
+  return (
+    event?.text ||
+    event?.transcript ||
+    event?.message ||
+    event?.rawResponse?.channel?.alternatives?.[0]?.transcript ||
+    event?.rawResponse?.alternatives?.[0]?.transcript ||
+    ""
+  )
+    .toString()
+    .trim();
+}
+
+function extractTranscriptSessionId(event) {
+  return (
+    event?.participantId ||
+    event?.participant?.session_id ||
+    event?.participant?.sessionId ||
+    event?.session_id ||
+    event?.sessionId ||
+    event?.user_id ||
+    ""
+  );
+}
+
+function isFinalTranscriptEvent(event) {
+  if (typeof event?.is_final === "boolean") return event.is_final;
+  if (typeof event?.isFinal === "boolean") return event.isFinal;
+  if (typeof event?.rawResponse?.is_final === "boolean") {
+    return event.rawResponse.is_final;
+  }
+
+  return true;
 }
 
 function ParticipantTile({ sessionId, fallbackName, label }) {
@@ -241,9 +270,7 @@ function CallControls({ joined }) {
     callObject.leave();
   }
 
-  if (!joined) {
-    return null;
-  }
+  if (!joined) return null;
 
   return (
     <div className="flex flex-wrap justify-center gap-3 border-t border-white/10 bg-neutral-950 p-4">
@@ -310,9 +337,7 @@ function ResultGraphic({
   const speakerBScore = getScoreForSpeaker(finalScore, "speakerB");
 
   const finalScoreKey = useMemo(() => {
-    if (!finalScore) {
-      return "no-final-score";
-    }
+    if (!finalScore) return "no-final-score";
 
     return [
       finalScore.computedAt || "",
@@ -371,9 +396,7 @@ function ResultGraphic({
       setAnimatedA(speakerAScore * easedProgress);
       setAnimatedB(speakerBScore * easedProgress);
 
-      if (progress >= 1) {
-        clearInterval(intervalId);
-      }
+      if (progress >= 1) clearInterval(intervalId);
     }, 40);
 
     const winnerTimerId = setTimeout(() => {
@@ -419,12 +442,12 @@ function ResultGraphic({
             {stage === "counting"
               ? "Scores are being revealed..."
               : finalScore.tie
-                ? "It is a tie"
+                ? "It is a draw"
                 : `${winnerName} wins`}
           </h3>
 
           <p className="mt-2 text-white/60">
-            Scores are based on the debate scoring dimensions and any penalties or bonuses.
+            Scores are based on the captured Daily transcript.
           </p>
         </div>
 
@@ -447,11 +470,11 @@ function ResultGraphic({
         {stage === "winner" || stage === "summary" ? (
           <div className="mt-8 rounded-2xl border border-white/10 bg-white/10 p-6 text-center">
             <div className="text-sm uppercase tracking-[0.25em] text-white/50">
-              Winner
+              Result
             </div>
 
             <div className="mt-2 text-5xl font-black">
-              {finalScore.tie ? "Tie" : winnerName}
+              {finalScore.tie ? "Draw" : winnerName}
             </div>
           </div>
         ) : null}
@@ -460,7 +483,7 @@ function ResultGraphic({
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
               <h4 className="text-lg font-bold text-green-200">
-                Why the winner won
+                Why this result was chosen
               </h4>
 
               <p className="mt-2 text-sm leading-6 text-white/75">
@@ -470,7 +493,7 @@ function ResultGraphic({
 
             <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
               <h4 className="text-lg font-bold text-red-200">
-                Where the loser fell short
+                What held the weaker side back
               </h4>
 
               <p className="mt-2 text-sm leading-6 text-white/75">
@@ -497,6 +520,8 @@ function CustomDailyCallInner({
   showResultGraphic,
   finalScore,
   roundScores,
+  isOwner,
+  onTranscriptSegment,
 }) {
   const callObject = useDaily();
   const meetingState = useMeetingState();
@@ -504,22 +529,113 @@ function CustomDailyCallInner({
 
   const [joinError, setJoinError] = useState("");
   const [joining, setJoining] = useState(false);
+  const [transcriptionStatus, setTranscriptionStatus] = useState("off");
+
+  const savedTranscriptKeysRef = useRef(new Set());
+  const transcriptionStartedRef = useRef(false);
 
   const joined = meetingState === "joined-meeting";
   const joiningNow = meetingState === "joining-meeting" || joining;
 
+  const speakerBySessionId = useMemo(() => {
+    const map = {};
+    if (participantIds[0]) map[participantIds[0]] = "speakerA";
+    if (participantIds[1]) map[participantIds[1]] = "speakerB";
+    return map;
+  }, [participantIds]);
+
   useEffect(() => {
-    if (!showResultGraphic || !joined || !callObject) {
-      return;
+    if (!callObject) return;
+
+    function handleTranscriptionStarted() {
+      setTranscriptionStatus("on");
     }
+
+    function handleTranscriptionStopped() {
+      setTranscriptionStatus("stopped");
+    }
+
+    function handleTranscriptionError(error) {
+      console.error("Daily transcription error", error);
+      setTranscriptionStatus("error");
+    }
+
+    function handleTranscriptionMessage(event) {
+      if (!onTranscriptSegment) return;
+      if (!isFinalTranscriptEvent(event)) return;
+
+      const text = extractTranscriptText(event);
+      if (!text) return;
+
+      const sessionId = extractTranscriptSessionId(event);
+      const speakerUserId = speakerBySessionId[sessionId] || null;
+
+      const startMs =
+        Number(event?.startMs ?? event?.start_ms ?? event?.timestamp ?? Date.now()) ||
+        Date.now();
+
+      const endMs =
+        Number(event?.endMs ?? event?.end_ms ?? event?.timestamp ?? startMs + 1000) ||
+        startMs + 1000;
+
+      const key = `${speakerUserId || sessionId || "unknown"}|${startMs}|${text}`;
+
+      if (savedTranscriptKeysRef.current.has(key)) return;
+      savedTranscriptKeysRef.current.add(key);
+
+      onTranscriptSegment({
+        speakerUserId,
+        startMs,
+        endMs,
+        text,
+        confidence: Number(event?.confidence ?? 0.9),
+      });
+    }
+
+    callObject.on("transcription-started", handleTranscriptionStarted);
+    callObject.on("transcription-stopped", handleTranscriptionStopped);
+    callObject.on("transcription-error", handleTranscriptionError);
+    callObject.on("transcription-message", handleTranscriptionMessage);
+
+    return () => {
+      callObject.off("transcription-started", handleTranscriptionStarted);
+      callObject.off("transcription-stopped", handleTranscriptionStopped);
+      callObject.off("transcription-error", handleTranscriptionError);
+      callObject.off("transcription-message", handleTranscriptionMessage);
+    };
+  }, [callObject, onTranscriptSegment, speakerBySessionId]);
+
+  useEffect(() => {
+    if (!callObject || !joined || !isOwner || showResultGraphic) return;
+    if (debateStatus !== "live") return;
+    if (transcriptionStartedRef.current) return;
+
+    transcriptionStartedRef.current = true;
+    setTranscriptionStatus("starting");
+
+    callObject
+      .startTranscription({
+        language: "en",
+        punctuate: true,
+        includeRawResponse: true,
+      })
+      .then(() => {
+        setTranscriptionStatus("on");
+      })
+      .catch((error) => {
+        console.error("Could not start Daily transcription", error);
+        setTranscriptionStatus("error");
+      });
+  }, [callObject, joined, isOwner, debateStatus, showResultGraphic]);
+
+  useEffect(() => {
+    if (!showResultGraphic || !joined || !callObject) return;
 
     callObject.leave().catch(() => null);
   }, [showResultGraphic, joined, callObject]);
 
   async function joinCall() {
-    if (!callObject || !roomUrl || joined || joiningNow) {
-      return;
-    }
+    if (!callObject || !roomUrl || joined || joiningNow) return;
 
     try {
       setJoinError("");
@@ -568,6 +684,10 @@ function CustomDailyCallInner({
                   : joined
                     ? "Video connected"
                     : "Not connected"}
+              </span>
+
+              <span className="rounded-full bg-white/10 px-3 py-1">
+                Transcript: {transcriptionStatus}
               </span>
             </div>
           </div>
