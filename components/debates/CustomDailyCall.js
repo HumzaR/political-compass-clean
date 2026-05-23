@@ -19,7 +19,10 @@ const DIMENSION_LABELS = {
 };
 
 function getScoreForSpeaker(finalScore, speakerId) {
-  const item = finalScore?.leaderboard?.find((entry) => entry.speakerId === speakerId);
+  const item = finalScore?.leaderboard?.find(
+    (entry) => entry.speakerId === speakerId
+  );
+
   return Number(item?.score || 0);
 }
 
@@ -62,11 +65,17 @@ function aggregateDimensions(roundScores, speakerId) {
   );
 }
 
-function buildResultExplanation({ finalScore, roundScores, speakerAName, speakerBName }) {
+function buildResultExplanation({
+  finalScore,
+  roundScores,
+  speakerAName,
+  speakerBName,
+}) {
   if (!finalScore) {
     return {
       winnerReason: "The scoring engine is still calculating the result.",
-      loserReason: "The post-debate breakdown will appear once the final score is ready.",
+      loserReason:
+        "The post-debate breakdown will appear once the final score is ready.",
     };
   }
 
@@ -79,7 +88,9 @@ function buildResultExplanation({ finalScore, roundScores, speakerAName, speaker
     };
   }
 
-  const winnerId = finalScore.winnerSpeakerId || finalScore.leaderboard?.[0]?.speakerId;
+  const winnerId =
+    finalScore.winnerSpeakerId || finalScore.leaderboard?.[0]?.speakerId;
+
   const loserId = winnerId === "speakerA" ? "speakerB" : "speakerA";
 
   const winnerName = getSpeakerName(winnerId, speakerAName, speakerBName);
@@ -179,6 +190,7 @@ function ParticipantTile({ sessionId, fallbackName, label }) {
             {displayName}
             {isLocal ? " (You)" : ""}
           </div>
+
           <div className="text-xs text-white/60">
             {micOn ? "Mic on" : "Mic muted"}
           </div>
@@ -297,9 +309,31 @@ function ResultGraphic({
   const speakerAScore = getScoreForSpeaker(finalScore, "speakerA");
   const speakerBScore = getScoreForSpeaker(finalScore, "speakerB");
 
+  const finalScoreKey = useMemo(() => {
+    if (!finalScore) {
+      return "no-final-score";
+    }
+
+    return [
+      finalScore.computedAt || "",
+      finalScore.winnerSpeakerId || "",
+      finalScore.tie ? "tie" : "not-tie",
+      speakerAScore,
+      speakerBScore,
+    ].join("|");
+  }, [
+    finalScore?.computedAt,
+    finalScore?.winnerSpeakerId,
+    finalScore?.tie,
+    speakerAScore,
+    speakerBScore,
+  ]);
+
   const winnerId = finalScore?.tie
     ? null
-    : finalScore?.winnerSpeakerId || finalScore?.leaderboard?.[0]?.speakerId || null;
+    : finalScore?.winnerSpeakerId ||
+      finalScore?.leaderboard?.[0]?.speakerId ||
+      null;
 
   const winnerName = winnerId
     ? getSpeakerName(winnerId, speakerAName, speakerBName)
@@ -355,7 +389,7 @@ function ResultGraphic({
       clearTimeout(winnerTimerId);
       clearTimeout(summaryTimerId);
     };
-  }, [finalScore, speakerAScore, speakerBScore]);
+  }, [finalScoreKey]);
 
   if (!finalScore) {
     return (
