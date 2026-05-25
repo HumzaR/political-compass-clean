@@ -11,11 +11,11 @@ import {
 } from "@daily-co/daily-react";
 
 const DIMENSION_LABELS = {
-  argumentQuality: "argument quality",
-  factualAccuracy: "evidence usage",
-  rebuttalEffectiveness: "rebuttal effectiveness",
-  rhetoricDelivery: "delivery and rhetoric",
-  topicConsistency: "topic consistency",
+  argumentQuality: "Argument quality",
+  factualAccuracy: "Evidence usage",
+  rebuttalEffectiveness: "Rebuttal effectiveness",
+  rhetoricDelivery: "Delivery and rhetoric",
+  topicConsistency: "Topic consistency",
 };
 
 function getScoreForSpeaker(finalScore, speakerId) {
@@ -32,32 +32,12 @@ function getSpeakerName(speakerId, speakerAName, speakerBName) {
   return speakerId || "Unknown speaker";
 }
 
-function aggregateDimensions(roundScores, speakerId) {
-  const totals = {};
-  let count = 0;
-
-  (roundScores || []).forEach((roundScore) => {
-    const dimensions = roundScore?.speakers?.[speakerId]?.dimensions;
-
-    if (!dimensions) return;
-
-    Object.keys(DIMENSION_LABELS).forEach((key) => {
-      totals[key] = (totals[key] || 0) + Number(dimensions[key] || 0);
-    });
-
-    count += 1;
-  });
-
-  if (!count) return {};
-
-  return Object.fromEntries(
-    Object.entries(totals).map(([key, value]) => [key, value / count])
-  );
+function getSpeakerBreakdown(finalScore, speakerId) {
+  return finalScore?.speakerBreakdown?.[speakerId] || null;
 }
 
 function buildResultExplanation({
   finalScore,
-  roundScores,
   speakerAName,
   speakerBName,
 }) {
@@ -76,7 +56,7 @@ function buildResultExplanation({
   if (finalScore.tie) {
     return {
       winnerReason:
-        "No winner was awarded because the scores were too close.",
+        "No winner was awarded because the final scores were too close.",
       loserReason:
         "Both sides need stronger arguments, clearer evidence and better rebuttals.",
     };
@@ -90,43 +70,9 @@ function buildResultExplanation({
   const winnerName = getSpeakerName(winnerId, speakerAName, speakerBName);
   const loserName = getSpeakerName(loserId, speakerAName, speakerBName);
 
-  const winnerDimensions = aggregateDimensions(roundScores, winnerId);
-  const loserDimensions = aggregateDimensions(roundScores, loserId);
-
-  const dimensionComparisons = Object.keys(DIMENSION_LABELS)
-    .map((key) => ({
-      key,
-      label: DIMENSION_LABELS[key],
-      winnerValue: Number(winnerDimensions[key] || 0),
-      loserValue: Number(loserDimensions[key] || 0),
-      gap: Number(winnerDimensions[key] || 0) - Number(loserDimensions[key] || 0),
-    }))
-    .sort((a, b) => b.gap - a.gap);
-
-  const winnerStrengths = dimensionComparisons
-    .filter((item) => item.gap > 0)
-    .slice(0, 2)
-    .map((item) => item.label);
-
-  const loserWeaknesses = dimensionComparisons
-    .filter((item) => item.gap > 0)
-    .slice(0, 2)
-    .map((item) => item.label);
-
-  if (!winnerStrengths.length) {
-    return {
-      winnerReason: `${winnerName} edged the debate overall based on the combined scoring dimensions.`,
-      loserReason: `${loserName} was close, but fell slightly behind on the final combined score.`,
-    };
-  }
-
   return {
-    winnerReason: `${winnerName} won because they performed better on ${winnerStrengths.join(
-      " and "
-    )}.`,
-    loserReason: `${loserName} lost ground mainly on ${loserWeaknesses.join(
-      " and "
-    )}, which reduced their final score.`,
+    winnerReason: `${winnerName} won because they performed better across the overall judging criteria.`,
+    loserReason: `${loserName} fell behind on the final combined score.`,
   };
 }
 
@@ -323,9 +269,128 @@ function ScoreCard({ label, name, score, animatedScore }) {
   );
 }
 
+function DimensionBars({ dimensions }) {
+  const safeDimensions = dimensions || {};
+
+  return (
+    <div className="mt-4 space-y-3">
+      {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
+        const value = Math.max(0, Math.min(100, Number(safeDimensions[key] || 0)));
+
+        return (
+          <div key={key}>
+            <div className="flex justify-between text-xs text-white/60">
+              <span>{label}</span>
+              <span>{value.toFixed(1)}</span>
+            </div>
+
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-white/80"
+                style={{ width: `${value}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TextList({ title, items, emptyText }) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-xl bg-white/5 p-4">
+      <h5 className="text-sm font-bold text-white">{title}</h5>
+
+      {safeItems.length ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-white/70">
+          {safeItems.slice(0, 4).map((item, index) => (
+            <li key={`${title}-${index}`}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-white/45">{emptyText}</p>
+      )}
+    </div>
+  );
+}
+
+function EvidenceQuotes({ quotes }) {
+  const safeQuotes = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-xl bg-white/5 p-4">
+      <h5 className="text-sm font-bold text-white">Evidence from transcript</h5>
+
+      {safeQuotes.length ? (
+        <div className="mt-3 space-y-2">
+          {safeQuotes.slice(0, 3).map((quote, index) => (
+            <blockquote
+              key={`quote-${index}`}
+              className="border-l-2 border-indigo-300 pl-3 text-sm leading-6 text-white/70"
+            >
+              “{quote}”
+            </blockquote>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-white/45">
+          No specific evidence quotes were returned by the judge.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SpeakerJudgeCard({ label, name, breakdown }) {
+  const score = Number(breakdown?.score || 0);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+            {label}
+          </div>
+
+          <h4 className="mt-1 text-2xl font-black">{name}</h4>
+
+          <p className="mt-2 text-sm leading-6 text-white/60">
+            {breakdown?.summary || "No judging summary available."}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white px-4 py-2 text-right text-neutral-950">
+          <div className="text-xs font-semibold uppercase">Score</div>
+          <div className="text-2xl font-black">{score.toFixed(1)}</div>
+        </div>
+      </div>
+
+      <DimensionBars dimensions={breakdown?.dimensions} />
+
+      <div className="mt-5 grid gap-3">
+        <TextList
+          title="Strengths"
+          items={breakdown?.strengths}
+          emptyText="No clear strengths detected."
+        />
+
+        <TextList
+          title="Weaknesses"
+          items={breakdown?.weaknesses}
+          emptyText="No clear weaknesses detected."
+        />
+
+        <EvidenceQuotes quotes={breakdown?.evidenceQuotes} />
+      </div>
+    </div>
+  );
+}
+
 function ResultGraphic({
   finalScore,
-  roundScores,
   speakerAName,
   speakerBName,
 }) {
@@ -335,6 +400,9 @@ function ResultGraphic({
 
   const speakerAScore = getScoreForSpeaker(finalScore, "speakerA");
   const speakerBScore = getScoreForSpeaker(finalScore, "speakerB");
+
+  const speakerABreakdown = getSpeakerBreakdown(finalScore, "speakerA");
+  const speakerBBreakdown = getSpeakerBreakdown(finalScore, "speakerB");
 
   const finalScoreKey = useMemo(() => {
     if (!finalScore) return "no-final-score";
@@ -368,11 +436,10 @@ function ResultGraphic({
     () =>
       buildResultExplanation({
         finalScore,
-        roundScores,
         speakerAName,
         speakerBName,
       }),
-    [finalScore, roundScores, speakerAName, speakerBName]
+    [finalScore, speakerAName, speakerBName]
   );
 
   useEffect(() => {
@@ -423,7 +490,7 @@ function ResultGraphic({
           <h3 className="mt-6 text-3xl font-black">Calculating result...</h3>
 
           <p className="mt-3 max-w-xl text-white/60">
-            The debate has ended. The scoring engine is preparing the final result.
+            The debate has ended. The AI judge is reading the transcript.
           </p>
         </div>
       </div>
@@ -432,10 +499,10 @@ function ResultGraphic({
 
   return (
     <div className="min-h-[520px] bg-gradient-to-br from-neutral-950 via-neutral-900 to-black p-6 text-white">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <div className="text-center">
           <div className="text-xs uppercase tracking-[0.35em] text-indigo-300">
-            Final Result
+            AI Judge Result
           </div>
 
           <h3 className="mt-2 text-4xl font-black">
@@ -447,8 +514,15 @@ function ResultGraphic({
           </h3>
 
           <p className="mt-2 text-white/60">
-            Scores are based on the captured Daily transcript.
+            Scores are based on the captured transcript and AI judging criteria.
           </p>
+
+          {finalScore.source ? (
+            <div className="mt-3 text-xs text-white/40">
+              Source: {finalScore.source} · Transcript words:{" "}
+              {finalScore.transcriptWordCount || 0}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-8 grid gap-5 md:grid-cols-2">
@@ -480,27 +554,52 @@ function ResultGraphic({
         ) : null}
 
         {stage === "summary" ? (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
-              <h4 className="text-lg font-bold text-green-200">
-                Why this result was chosen
-              </h4>
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
+                <h4 className="text-lg font-bold text-green-200">
+                  {finalScore.tie
+                    ? "Why it was a draw"
+                    : "Why this result was chosen"}
+                </h4>
 
-              <p className="mt-2 text-sm leading-6 text-white/75">
-                {explanation.winnerReason}
-              </p>
+                <p className="mt-2 text-sm leading-6 text-white/75">
+                  {explanation.winnerReason}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
+                <h4 className="text-lg font-bold text-red-200">
+                  What needs improving
+                </h4>
+
+                <p className="mt-2 text-sm leading-6 text-white/75">
+                  {explanation.loserReason}
+                </p>
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
-              <h4 className="text-lg font-bold text-red-200">
-                What held the weaker side back
-              </h4>
-
-              <p className="mt-2 text-sm leading-6 text-white/75">
-                {explanation.loserReason}
+            <div className="mt-8">
+              <h4 className="text-2xl font-black">Judge breakdown</h4>
+              <p className="mt-1 text-sm text-white/50">
+                Each score is based only on what appears in the transcript.
               </p>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                <SpeakerJudgeCard
+                  label="Speaker A"
+                  name={speakerAName}
+                  breakdown={speakerABreakdown}
+                />
+
+                <SpeakerJudgeCard
+                  label="Speaker B"
+                  name={speakerBName}
+                  breakdown={speakerBBreakdown}
+                />
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
     </div>
@@ -519,7 +618,6 @@ function CustomDailyCallInner({
   speakerBName,
   showResultGraphic,
   finalScore,
-  roundScores,
   isOwner,
   onTranscriptSegment,
 }) {
@@ -533,9 +631,14 @@ function CustomDailyCallInner({
 
   const savedTranscriptKeysRef = useRef(new Set());
   const transcriptionStartedRef = useRef(false);
+  const onTranscriptSegmentRef = useRef(onTranscriptSegment);
 
   const joined = meetingState === "joined-meeting";
   const joiningNow = meetingState === "joining-meeting" || joining;
+
+  useEffect(() => {
+    onTranscriptSegmentRef.current = onTranscriptSegment;
+  }, [onTranscriptSegment]);
 
   const speakerBySessionId = useMemo(() => {
     const map = {};
@@ -561,7 +664,7 @@ function CustomDailyCallInner({
     }
 
     function handleTranscriptionMessage(event) {
-      if (!onTranscriptSegment) return;
+      if (!onTranscriptSegmentRef.current) return;
       if (!isFinalTranscriptEvent(event)) return;
 
       const text = extractTranscriptText(event);
@@ -583,7 +686,7 @@ function CustomDailyCallInner({
       if (savedTranscriptKeysRef.current.has(key)) return;
       savedTranscriptKeysRef.current.add(key);
 
-      onTranscriptSegment({
+      onTranscriptSegmentRef.current({
         speakerUserId,
         startMs,
         endMs,
@@ -603,7 +706,7 @@ function CustomDailyCallInner({
       callObject.off("transcription-error", handleTranscriptionError);
       callObject.off("transcription-message", handleTranscriptionMessage);
     };
-  }, [callObject, onTranscriptSegment, speakerBySessionId]);
+  }, [callObject, speakerBySessionId]);
 
   useEffect(() => {
     if (!callObject || !joined || !isOwner || showResultGraphic) return;
@@ -713,7 +816,6 @@ function CustomDailyCallInner({
       {showResultGraphic ? (
         <ResultGraphic
           finalScore={finalScore}
-          roundScores={roundScores}
           speakerAName={speakerAName}
           speakerBName={speakerBName}
         />
@@ -784,9 +886,9 @@ export default function CustomDailyCall(props) {
         .leave()
         .catch(() => null)
         .finally(() => {
-          if (!dailyCallObject.isDestroyed()) {
+          try {
             dailyCallObject.destroy();
-          }
+          } catch {}
         });
     };
   }, []);
