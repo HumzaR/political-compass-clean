@@ -675,7 +675,8 @@ export default function DebateWorkspacePage() {
               Rounds: {roundCount} · Closed: {closedRoundCount} · Live session:{" "}
               {hasLiveSession ? "yes" : "no"} · Participants: {participants.length}/2 ·{" "}
               Role: {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·{" "}
-              Duration: {estimatedDurationLabel}
+              Duration: {estimatedDurationLabel} · Transcript segments:{" "}
+{(workspace?.transcriptSegments || []).length}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -845,8 +846,9 @@ export default function DebateWorkspacePage() {
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-gray-600">
-                      No transcript was captured for this debate. The score will be zero or a draw
-                      because there was no speech to judge.
+                      No transcript was captured for this debate. This usually means Daily transcription did not start,
+the host did not join the video call, or transcription is not enabled on the Daily account. The
+score will be zero or a draw because there was no speech to judge.
                     </p>
                   )}
                 </div>
