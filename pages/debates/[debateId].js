@@ -89,6 +89,7 @@ function MessageDebatePanel({
   speakerAName,
   speakerBName,
   timerText,
+  currentRoundLabel,
   busy,
   isParticipant,
   onSendMessage,
@@ -130,6 +131,10 @@ function MessageDebatePanel({
             <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
               <span className="rounded-full bg-white/10 px-3 py-1">
                 {speakerAName} vs {speakerBName}
+              </span>
+
+              <span className="rounded-full bg-white/10 px-3 py-1">
+                {currentRoundLabel}
               </span>
 
               <span className="rounded-full bg-white/10 px-3 py-1">
@@ -636,41 +641,6 @@ export default function DebateWorkspacePage() {
 
   const autoFinishStartedRef = useRef(false);
 
-  const [roundIdInput, setRoundIdInput] = useState("");
-  const [speakersJson, setSpeakersJson] = useState(
-    JSON.stringify(
-      {
-        speakerA: {
-          dimensions: {
-            argumentQuality: 70,
-            factualAccuracy: 65,
-            rebuttalEffectiveness: 60,
-            rhetoricDelivery: 66,
-            topicConsistency: 72,
-          },
-          penalties: 0,
-          bonuses: 0,
-        },
-        speakerB: {
-          dimensions: {
-            argumentQuality: 68,
-            factualAccuracy: 67,
-            rebuttalEffectiveness: 62,
-            rhetoricDelivery: 64,
-            topicConsistency: 70,
-          },
-          penalties: 0,
-          bonuses: 0,
-        },
-      },
-      null,
-      2
-    )
-  );
-
-  const [speakerUserId, setSpeakerUserId] = useState("");
-  const [segmentText, setSegmentText] = useState("");
-
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u || null);
@@ -701,22 +671,19 @@ export default function DebateWorkspacePage() {
 
   const canStartDebate = debate?.status === "scheduled" && hasTwoParticipants;
 
-  const firstOpenRoundId = useMemo(() => {
-    const rounds = debate?.rounds || [];
-    const openRound = rounds.find((r) => r.status !== "closed");
-
-    return openRound?.id || "";
-  }, [debate]);
-
   const activeRound = useMemo(() => {
     const debateRounds = debate?.rounds || [];
 
-    if (!debateRounds.length) {
+    if (!debateRounds.length || debate?.status === "ended") {
       return null;
     }
 
     if (debate?.status === "live" && timerReady) {
-      const totalSeconds = getDebateDurationSeconds(debate?.format, debate?.durationMinutes);
+      const totalSeconds = getDebateDurationSeconds(
+        debate?.format,
+        debate?.durationMinutes
+      );
+
       const secondsPerRound =
         totalSeconds / Math.max(1, Number(debateRounds.length || 1));
 
@@ -733,12 +700,17 @@ export default function DebateWorkspacePage() {
       debateRounds[0] ||
       null
     );
-  }, [debate?.rounds, debate?.status, debate?.format, elapsedSeconds, timerReady]);
+  }, [
+    debate?.rounds,
+    debate?.status,
+    debate?.format,
+    debate?.durationMinutes,
+    elapsedSeconds,
+    timerReady,
+  ]);
 
-  const currentRound = activeRound;
-
-  const currentRoundLabel = currentRound
-    ? getRoundDisplay(currentRound)
+  const currentRoundLabel = activeRound
+    ? getRoundDisplay(activeRound)
     : debate?.status === "ended"
       ? "Debate ended"
       : "Not started";
@@ -810,7 +782,7 @@ export default function DebateWorkspacePage() {
 
   const estimatedDurationLabel = useMemo(() => {
     return getLengthLabel(debate?.format || "short", debate?.durationMinutes);
-  }, [debate?.format]);
+  }, [debate?.format, debate?.durationMinutes]);
 
   const shouldShowResultGraphic =
     debate?.status === "ended" ||
@@ -860,18 +832,15 @@ export default function DebateWorkspacePage() {
   }, [debate?.finalScore, speakerAName, speakerBName]);
 
   useEffect(() => {
-    if (!roundIdInput && firstOpenRoundId) {
-      setRoundIdInput(firstOpenRoundId);
-    }
-  }, [firstOpenRoundId, roundIdInput]);
-
-  useEffect(() => {
     if (debate?.status !== "live" || !debate?.startedAt) {
       setTimerReady(false);
       return;
     }
 
-    const totalSeconds = getDebateDurationSeconds(debate?.format, debate?.durationMinutes);
+    const totalSeconds = getDebateDurationSeconds(
+      debate?.format,
+      debate?.durationMinutes
+    );
 
     function updateTimer() {
       const startedAtMs = new Date(debate.startedAt).getTime();
@@ -897,7 +866,12 @@ export default function DebateWorkspacePage() {
     const id = setInterval(updateTimer, 1000);
 
     return () => clearInterval(id);
-  }, [debate?.status, debate?.startedAt, debate?.format]);
+  }, [
+    debate?.status,
+    debate?.startedAt,
+    debate?.format,
+    debate?.durationMinutes,
+  ]);
 
   useEffect(() => {
     if (debate?.status !== "live") {
@@ -1116,6 +1090,10 @@ export default function DebateWorkspacePage() {
 
       autoFinishStartedRef.current = false;
 
+      if (isVideoVoiceDebate && !liveRoomUrl) {
+        await callApi(`/api/debates/${debateId}/live/session`, "POST");
+      }
+
       await callApi(`/api/debates/${debateId}/start`, "POST");
 
       setNotice("Debate started.");
@@ -1141,48 +1119,6 @@ export default function DebateWorkspacePage() {
       await loadWorkspace();
     } catch (e) {
       setError(e.message);
-    }
-  }
-
-  async function onCreateLiveSession() {
-    try {
-      if (!isOwner) {
-        throw new Error("Only the debate owner can create the live session.");
-      }
-
-      if (isMessageDebate) {
-        throw new Error("Message debates do not use a video/voice session.");
-      }
-
-      await callApi(`/api/debates/${debateId}/live/session`, "POST");
-
-      setNotice("Live session created.");
-      await loadWorkspace();
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  async function onCloseRound() {
-    try {
-      if (!isOwner) {
-        throw new Error("Only the debate owner can close rounds.");
-      }
-
-      const speakers = JSON.parse(speakersJson);
-
-      if (!roundIdInput) {
-        throw new Error("Round ID is required.");
-      }
-
-      await callApi(`/api/debates/${debateId}/rounds/${roundIdInput}/close`, "POST", {
-        speakers,
-      });
-
-      setNotice("Round closed.");
-      await loadWorkspace();
-    } catch (e) {
-      setError(e.message || "Invalid speakers JSON");
     }
   }
 
@@ -1216,33 +1152,6 @@ export default function DebateWorkspacePage() {
       }
 
       setScorecard(body);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
-  async function onAddSegment() {
-    try {
-      if (!segmentText.trim()) {
-        throw new Error("Transcript text is required.");
-      }
-
-      await callApi(`/api/debates/${debateId}/transcript/segments`, "POST", {
-        source: "manual",
-        segments: [
-          {
-            speakerUserId: speakerUserId || undefined,
-            startMs: Date.now(),
-            endMs: Date.now() + 2000,
-            text: segmentText.trim(),
-            confidence: 0.95,
-          },
-        ],
-      });
-
-      setSegmentText("");
-      setNotice("Transcript segment added.");
-      await loadWorkspace();
     } catch (e) {
       setError(e.message);
     }
@@ -1297,34 +1206,16 @@ export default function DebateWorkspacePage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                disabled={busy}
+                onClick={copyInviteLink}
+                className="rounded border px-3 py-2 disabled:opacity-50"
+              >
+                Copy invite link
+              </button>
+
               {isOwner ? (
                 <>
-                  <button
-                    disabled={busy}
-                    onClick={copyInviteLink}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    Copy invite link
-                  </button>
-
-                  {isVideoVoiceDebate ? (
-                    <button
-                      disabled={busy}
-                      onClick={onCreateLiveSession}
-                      className="rounded border px-3 py-2 disabled:opacity-50"
-                    >
-                      Create live session
-                    </button>
-                  ) : null}
-
-                  <button
-                    disabled={busy || !canStartDebate}
-                    onClick={onStart}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    Start debate
-                  </button>
-
                   <button
                     disabled={busy || debate?.status !== "live"}
                     onClick={onEnd}
@@ -1386,6 +1277,20 @@ export default function DebateWorkspacePage() {
                 Both participants are now in the debate. The host can start the
                 debate.
               </p>
+
+              {isOwner ? (
+                <button
+                  disabled={busy || !canStartDebate}
+                  onClick={onStart}
+                  className="mt-4 rounded border bg-white px-4 py-2 font-medium text-green-800 disabled:opacity-50"
+                >
+                  Start debate
+                </button>
+              ) : (
+                <p className="mt-4 text-sm text-green-700">
+                  Waiting for the host to start the debate.
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -1397,7 +1302,7 @@ export default function DebateWorkspacePage() {
 
               <p className="mt-2 text-gray-600">
                 You have joined the debate. The video room will appear here once
-                the host creates the live session.
+                the host starts the debate.
               </p>
             </div>
           ) : null}
@@ -1418,6 +1323,7 @@ export default function DebateWorkspacePage() {
                 speakerAName={speakerAName}
                 speakerBName={speakerBName}
                 timerText={formatTimer(remainingSeconds)}
+                currentRoundLabel={currentRoundLabel}
                 busy={busy}
                 isParticipant={isParticipant}
                 onSendMessage={sendMessageDebateMessage}
@@ -1503,65 +1409,6 @@ export default function DebateWorkspacePage() {
                 </div>
               ) : null}
             </div>
-          ) : null}
-
-          {isOwner ? (
-            <>
-              <div className="rounded-xl border p-4 space-y-3">
-                <h2 className="text-xl font-medium">Close Round</h2>
-
-                <input
-                  className="w-full rounded border p-2"
-                  value={roundIdInput}
-                  onChange={(e) => setRoundIdInput(e.target.value)}
-                  placeholder="Round ID"
-                />
-
-                <textarea
-                  className="w-full rounded border p-2 min-h-[200px] font-mono text-sm"
-                  value={speakersJson}
-                  onChange={(e) => setSpeakersJson(e.target.value)}
-                />
-
-                <button
-                  disabled={busy || debate?.status !== "live"}
-                  onClick={onCloseRound}
-                  className="rounded border px-3 py-2 disabled:opacity-50"
-                >
-                  Close round
-                </button>
-              </div>
-
-              <div className="rounded-xl border p-4 space-y-3">
-                <h2 className="text-xl font-medium">Manual Transcript</h2>
-
-                <input
-                  className="w-full rounded border p-2"
-                  value={speakerUserId}
-                  onChange={(e) => setSpeakerUserId(e.target.value)}
-                  placeholder="speakerA or speakerB"
-                />
-
-                <textarea
-                  className="w-full rounded border p-2 min-h-[100px]"
-                  value={segmentText}
-                  onChange={(e) => setSegmentText(e.target.value)}
-                  placeholder="Transcript text"
-                />
-
-                <button
-                  disabled={busy}
-                  onClick={onAddSegment}
-                  className="rounded border px-3 py-2 disabled:opacity-50"
-                >
-                  Add transcript segment
-                </button>
-
-                <div className="text-sm text-gray-700 mt-3">
-                  Segments: {(workspace?.transcriptSegments || []).length}
-                </div>
-              </div>
-            </>
           ) : null}
 
           {scorecard ? (
