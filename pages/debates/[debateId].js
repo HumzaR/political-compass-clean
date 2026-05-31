@@ -41,6 +41,163 @@ function getDebateDurationSeconds(format, roundCount) {
   return safeRoundCount * 1 * 60;
 }
 
+function getModeLabel(debateMode) {
+  if (debateMode === "message") {
+    return "Message";
+  }
+
+  return "Video/voice";
+}
+
+function MessageDebatePanel({
+  debate,
+  transcriptSegments,
+  speakerAName,
+  speakerBName,
+  timerText,
+  busy,
+  isParticipant,
+  onSendMessage,
+}) {
+  const [message, setMessage] = useState("");
+
+  const sortedSegments = useMemo(() => {
+    return [...(transcriptSegments || [])].sort(
+      (a, b) => Number(a.startMs || 0) - Number(b.startMs || 0)
+    );
+  }, [transcriptSegments]);
+
+  async function submitMessage(e) {
+    e.preventDefault();
+
+    const text = message.trim();
+
+    if (!text) {
+      return;
+    }
+
+    await onSendMessage(text);
+    setMessage("");
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+      <div className="border-b bg-neutral-950 p-4 text-white">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.25em] text-indigo-300">
+              Message Debate
+            </div>
+
+            <h2 className="mt-1 text-2xl font-bold">
+              {debate?.title || "Untitled debate"}
+            </h2>
+
+            <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
+              <span className="rounded-full bg-white/10 px-3 py-1">
+                {speakerAName} vs {speakerBName}
+              </span>
+
+              <span className="rounded-full bg-white/10 px-3 py-1">
+                Status: {debate?.status}
+              </span>
+
+              <span className="rounded-full bg-white/10 px-3 py-1">
+                Messages: {sortedSegments.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-[0.2em] text-white/50">
+              Countdown
+            </div>
+
+            <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
+              {debate?.status === "live" ? timerText : "00:00"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto bg-gray-50 p-4">
+        {sortedSegments.length ? (
+          sortedSegments.map((segment) => {
+            const isSpeakerA = segment.speakerUserId === "speakerA";
+            const name = isSpeakerA ? speakerAName : speakerBName;
+
+            return (
+              <div
+                key={segment.id || `${segment.startMs}-${segment.text}`}
+                className={`flex ${isSpeakerA ? "justify-start" : "justify-end"}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    isSpeakerA
+                      ? "bg-white text-gray-900"
+                      : "bg-indigo-600 text-white"
+                  }`}
+                >
+                  <div
+                    className={`mb-1 text-xs font-semibold ${
+                      isSpeakerA ? "text-gray-500" : "text-indigo-100"
+                    }`}
+                  >
+                    {name}
+                  </div>
+
+                  <div className="whitespace-pre-wrap text-sm leading-6">
+                    {segment.text}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="flex h-[320px] items-center justify-center text-center text-gray-500">
+            <div>
+              <div className="text-lg font-medium">No messages yet</div>
+              <p className="mt-1 text-sm">
+                Start the debate, then both participants can send messages.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={submitMessage} className="border-t bg-white p-4">
+        {debate?.status !== "live" ? (
+          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+            Messages can only be sent while the debate is live.
+          </div>
+        ) : !isParticipant ? (
+          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+            Only the two debate participants can send messages.
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <textarea
+              className="min-h-[56px] flex-1 rounded-xl border p-3"
+              placeholder="Write your argument..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              disabled={busy}
+            />
+
+            <button
+              type="submit"
+              disabled={busy || !message.trim()}
+              className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
+
 export default function DebateWorkspacePage() {
   const router = useRouter();
   const { debateId } = router.query;
@@ -105,6 +262,10 @@ export default function DebateWorkspacePage() {
   }, []);
 
   const debate = workspace?.debate || null;
+  const debateMode = debate?.debateMode || "video_voice";
+  const isMessageDebate = debateMode === "message";
+  const isVideoVoiceDebate = debateMode !== "message";
+
   const participants = debate?.participants || [];
   const hasTwoParticipants = participants.length >= 2;
 
@@ -420,6 +581,7 @@ export default function DebateWorkspacePage() {
           ...(await getAuthHeaders()),
         },
         body: JSON.stringify({
+          source: "daily_transcript",
           segments: [
             {
               speakerUserId: segment.speakerUserId || null,
@@ -440,6 +602,22 @@ export default function DebateWorkspacePage() {
     } catch (e) {
       setError(e.message || "Could not save transcript.");
     }
+  }
+
+  async function sendMessageDebateMessage(text) {
+    await callApi(`/api/debates/${debateId}/transcript/segments`, "POST", {
+      source: "message",
+      segments: [
+        {
+          startMs: Date.now(),
+          endMs: Date.now() + 1000,
+          text,
+          confidence: 1,
+        },
+      ],
+    });
+
+    await loadWorkspace({ silent: true });
   }
 
   async function onTimerFinished() {
@@ -614,6 +792,7 @@ export default function DebateWorkspacePage() {
       }
 
       await callApi(`/api/debates/${debateId}/transcript/segments`, "POST", {
+        source: "manual",
         segments: [
           {
             speakerUserId: speakerUserId || undefined,
@@ -672,11 +851,12 @@ export default function DebateWorkspacePage() {
             <div className="font-medium">Status: {debate?.status}</div>
 
             <div className="text-sm text-gray-600 mt-1">
-              Rounds: {roundCount} · Closed: {closedRoundCount} · Live session:{" "}
-              {hasLiveSession ? "yes" : "no"} · Participants: {participants.length}/2 ·{" "}
-              Role: {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·{" "}
-              Duration: {estimatedDurationLabel} · Transcript segments:{" "}
-{(workspace?.transcriptSegments || []).length}
+              Mode: {getModeLabel(debateMode)} · Rounds: {roundCount} · Closed:{" "}
+              {closedRoundCount} · Live session: {hasLiveSession ? "yes" : "no"} ·
+              Participants: {participants.length}/2 · Role:{" "}
+              {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} · Duration:{" "}
+              {estimatedDurationLabel} · Transcript segments:{" "}
+              {(workspace?.transcriptSegments || []).length}
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -690,13 +870,15 @@ export default function DebateWorkspacePage() {
                     Copy invite link
                   </button>
 
-                  <button
-                    disabled={busy}
-                    onClick={onCreateLiveSession}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    Create live session
-                  </button>
+                  {isVideoVoiceDebate ? (
+                    <button
+                      disabled={busy}
+                      onClick={onCreateLiveSession}
+                      className="rounded border px-3 py-2 disabled:opacity-50"
+                    >
+                      Create live session
+                    </button>
+                  ) : null}
 
                   <button
                     disabled={busy || !canStartDebate}
@@ -760,13 +942,12 @@ export default function DebateWorkspacePage() {
             <div className="rounded-xl border border-green-200 bg-green-50 p-5">
               <h2 className="text-xl font-semibold text-green-800">Opponent joined</h2>
               <p className="mt-1 text-green-700">
-                Both participants are now in the debate. The host can create the live session and
-                start the debate.
+                Both participants are now in the debate. The host can start the debate.
               </p>
             </div>
           ) : null}
 
-          {!isOwner && !liveRoomUrl ? (
+          {!isOwner && isVideoVoiceDebate && !liveRoomUrl ? (
             <div className="rounded-xl border p-5 text-center">
               <h2 className="text-xl font-semibold">Waiting for host to start video</h2>
               <p className="mt-2 text-gray-600">
@@ -776,7 +957,20 @@ export default function DebateWorkspacePage() {
             </div>
           ) : null}
 
-          {liveRoomUrl ? (
+          {isMessageDebate ? (
+            <MessageDebatePanel
+              debate={debate}
+              transcriptSegments={workspace?.transcriptSegments || []}
+              speakerAName={speakerAName}
+              speakerBName={speakerBName}
+              timerText={formatTimer(remainingSeconds)}
+              busy={busy}
+              isParticipant={isParticipant}
+              onSendMessage={sendMessageDebateMessage}
+            />
+          ) : null}
+
+          {isVideoVoiceDebate && liveRoomUrl ? (
             <CustomDailyCall
               roomUrl={liveRoomUrl}
               token={liveToken}
@@ -789,7 +983,6 @@ export default function DebateWorkspacePage() {
               speakerBName={speakerBName}
               showResultGraphic={shouldShowResultGraphic}
               finalScore={debate?.finalScore}
-              roundScores={debate?.roundScores || []}
               isOwner={isOwner}
               onTranscriptSegment={saveDailyTranscriptSegment}
             />
@@ -846,9 +1039,8 @@ export default function DebateWorkspacePage() {
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-gray-600">
-                      No transcript was captured for this debate. This usually means Daily transcription did not start,
-the host did not join the video call, or transcription is not enabled on the Daily account. The
-score will be zero or a draw because there was no speech to judge.
+                      No transcript was captured for this debate. This usually means no messages
+                      were sent or Daily transcription did not start.
                     </p>
                   )}
                 </div>
