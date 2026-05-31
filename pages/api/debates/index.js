@@ -1,7 +1,7 @@
 import { allowMethods, badRequest, requireActor } from "@/lib/debates/http";
 import { createDebate, listDebates } from "@/lib/debates/store";
 
-const FORMATS = new Set(["short", "medium", "long"]);
+const FORMATS = new Set(["short", "medium", "long", "custom"]);
 const DEBATE_MODES = new Set(["video_voice", "message"]);
 const DOMAINS = new Set(["politics", "sports", "general"]);
 
@@ -9,6 +9,12 @@ function normaliseRounds(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 1;
   return Math.max(1, Math.min(20, Math.floor(number)));
+}
+
+function normaliseDurationMinutes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(1, Math.min(180, Math.floor(number)));
 }
 
 export default async function handler(req, res) {
@@ -26,6 +32,7 @@ export default async function handler(req, res) {
     motionText,
     debateMode = "video_voice",
     format = "short",
+    durationMinutes = null,
     domain = "politics",
     rounds = 1,
     roundSubtopics = [],
@@ -34,6 +41,7 @@ export default async function handler(req, res) {
   const cleanTitle = String(title || "").trim();
   const cleanMotionText = String(motionText || title || "").trim();
   const roundCount = normaliseRounds(rounds);
+  const cleanDurationMinutes = normaliseDurationMinutes(durationMinutes);
 
   if (!cleanTitle || !cleanMotionText) {
     return badRequest(res, "title and motionText are required");
@@ -44,7 +52,11 @@ export default async function handler(req, res) {
   }
 
   if (!FORMATS.has(format)) {
-    return badRequest(res, "format must be short, medium, or long");
+    return badRequest(res, "format must be short, medium, long, or custom");
+  }
+
+  if (format === "custom" && !cleanDurationMinutes) {
+    return badRequest(res, "durationMinutes is required for custom debates");
   }
 
   if (!DOMAINS.has(domain)) {
@@ -54,7 +66,9 @@ export default async function handler(req, res) {
   const cleanedRoundSubtopics =
     roundCount > 1
       ? Array.isArray(roundSubtopics)
-        ? roundSubtopics.slice(0, roundCount).map((item) => String(item || "").trim())
+        ? roundSubtopics
+            .slice(0, roundCount)
+            .map((item) => String(item || "").trim())
         : []
       : [];
 
@@ -75,6 +89,7 @@ export default async function handler(req, res) {
     motionText: cleanMotionText,
     debateMode,
     format,
+    durationMinutes: format === "custom" ? cleanDurationMinutes : null,
     domain,
     rounds: roundCount,
     roundSubtopics: cleanedRoundSubtopics,

@@ -8,6 +8,7 @@ const LENGTH_OPTIONS = [
   { value: "short", label: "5", subLabel: "Minutes", archiveLabel: "Short" },
   { value: "medium", label: "20", subLabel: "Minutes", archiveLabel: "Medium" },
   { value: "long", label: "45", subLabel: "Minutes", archiveLabel: "Long" },
+  { value: "custom", label: "Custom", subLabel: "Time", archiveLabel: "Custom" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -30,10 +31,14 @@ function getDebateModeLabel(mode) {
   return "Video/Voice";
 }
 
-function getLengthLabel(format) {
+function getLengthLabel(debate) {
+  if (debate?.format === "custom") {
+    return `${debate?.durationMinutes || "Custom"} min`;
+  }
+
   return (
-    LENGTH_OPTIONS.find((option) => option.value === format)?.archiveLabel ||
-    "Short"
+    LENGTH_OPTIONS.find((option) => option.value === debate?.format)
+      ?.archiveLabel || "Short"
   );
 }
 
@@ -50,6 +55,12 @@ function normaliseRounds(value) {
   return Math.max(1, Math.min(20, Math.floor(number)));
 }
 
+function normaliseDurationMinutes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 10;
+  return Math.max(1, Math.min(180, Math.floor(number)));
+}
+
 function DebateHistoryCard({ debate }) {
   return (
     <div className="rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-5 shadow-[0_0_24px_rgba(14,165,233,0.14)]">
@@ -61,7 +72,7 @@ function DebateHistoryCard({ debate }) {
 
           <div className="mt-3 space-y-1 text-base text-white/65">
             <div>Format: {getDebateModeLabel(debate.debateMode)}</div>
-            <div>Length: {getLengthLabel(debate.format)}</div>
+            <div>Length: {getLengthLabel(debate)}</div>
             <div>Topic: {getDomainLabel(debate.domain)}</div>
             <div>
               Status:{" "}
@@ -115,6 +126,7 @@ export default function DebatesIndexPage() {
   const [title, setTitle] = useState("");
   const [debateMode, setDebateMode] = useState("video_voice");
   const [format, setFormat] = useState("short");
+  const [customDurationMinutes, setCustomDurationMinutes] = useState(10);
   const [domain, setDomain] = useState("politics");
   const [rounds, setRounds] = useState(1);
   const [roundSubtopics, setRoundSubtopics] = useState([]);
@@ -122,6 +134,11 @@ export default function DebatesIndexPage() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const roundCount = useMemo(() => normaliseRounds(rounds), [rounds]);
+  const durationMinutes = useMemo(
+    () => normaliseDurationMinutes(customDurationMinutes),
+    [customDurationMinutes]
+  );
+
   const showRoundSubtopics = roundCount > 1;
   const visibleHistory = items.slice(0, DEFAULT_HISTORY_COUNT);
 
@@ -187,6 +204,10 @@ export default function DebatesIndexPage() {
         throw new Error("Title is required.");
       }
 
+      if (format === "custom" && !durationMinutes) {
+        throw new Error("Enter a custom debate length.");
+      }
+
       const cleanedSubtopics = showRoundSubtopics
         ? roundSubtopics.slice(0, roundCount).map((item) => item.trim())
         : [];
@@ -212,6 +233,7 @@ export default function DebatesIndexPage() {
           motionText: cleanTitle,
           debateMode,
           format,
+          durationMinutes: format === "custom" ? durationMinutes : null,
           domain,
           rounds: roundCount,
           roundSubtopics: cleanedSubtopics,
@@ -268,7 +290,7 @@ export default function DebatesIndexPage() {
           </div>
         ) : null}
 
-        <div className="mt-7 grid gap-7 xl:grid-cols-[1.05fr_1fr]">
+        <div className="mt-7 grid gap-7 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.58fr)]">
           <section>
             <h2 className="text-2xl font-black">The Arena</h2>
 
@@ -352,13 +374,19 @@ export default function DebatesIndexPage() {
                             key={option.value}
                             type="button"
                             onClick={() => setFormat(option.value)}
-                            className={`rounded-xl border px-4 py-4 text-center transition ${
+                            className={`rounded-xl border px-3 py-4 text-center transition ${
                               format === option.value
                                 ? "border-cyan-300 bg-cyan-400/15 shadow-[0_0_25px_rgba(14,165,233,0.25)]"
                                 : "border-white/15 bg-slate-950/50 hover:border-white/30"
                             }`}
                           >
-                            <div className="text-2xl font-black">
+                            <div
+                              className={
+                                option.value === "custom"
+                                  ? "text-base font-black leading-tight"
+                                  : "text-2xl font-black"
+                              }
+                            >
                               {option.label}
                             </div>
                             <div className="text-sm text-white/65">
@@ -366,19 +394,27 @@ export default function DebatesIndexPage() {
                             </div>
                           </button>
                         ))}
-
-                        <button
-                          type="button"
-                          disabled
-                          className="rounded-xl border border-white/10 bg-slate-950/30 px-3 py-4 text-center text-white/35"
-                        >
-                          <div className="text-xl font-black leading-tight">
-                            Custom
-                          </div>
-                          <div className="text-sm">Time</div>
-                        </button>
                       </div>
                     </div>
+
+                    {format === "custom" ? (
+                      <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
+                        <div className="text-sm font-semibold text-white/80">
+                          Minutes
+                        </div>
+
+                        <input
+                          className="w-36 rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
+                          type="number"
+                          min={1}
+                          max={180}
+                          value={customDurationMinutes}
+                          onChange={(e) =>
+                            setCustomDurationMinutes(e.target.value)
+                          }
+                        />
+                      </div>
+                    ) : null}
 
                     <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
                       <div className="text-sm font-semibold text-white/80">
@@ -463,19 +499,7 @@ export default function DebatesIndexPage() {
           </section>
 
           <section>
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-2xl font-black">History</h2>
-
-              {items.length > DEFAULT_HISTORY_COUNT ? (
-                <button
-                  type="button"
-                  onClick={() => setShowHistoryModal(true)}
-                  className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
-                >
-                  See more
-                </button>
-              ) : null}
-            </div>
+            <h2 className="text-2xl font-black">History</h2>
 
             {loading ? (
               <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
@@ -486,11 +510,23 @@ export default function DebatesIndexPage() {
                 No debates yet.
               </div>
             ) : (
-              <div className="mt-4 space-y-5">
-                {visibleHistory.map((debate) => (
-                  <DebateHistoryCard key={debate.id} debate={debate} />
-                ))}
-              </div>
+              <>
+                <div className="mt-4 space-y-5">
+                  {visibleHistory.map((debate) => (
+                    <DebateHistoryCard key={debate.id} debate={debate} />
+                  ))}
+                </div>
+
+                {items.length > DEFAULT_HISTORY_COUNT ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowHistoryModal(true)}
+                    className="mt-5 w-full rounded-xl border border-cyan-200/20 px-4 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
+                  >
+                    See more
+                  </button>
+                ) : null}
+              </>
             )}
           </section>
         </div>

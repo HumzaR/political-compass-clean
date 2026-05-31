@@ -31,7 +31,11 @@ function formatTimer(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function getDebateDurationSeconds(format) {
+function getDebateDurationSeconds(format, durationMinutes) {
+  if (format === "custom") {
+    return Math.max(1, Number(durationMinutes || 10)) * 60;
+  }
+
   if (format === "long") {
     return 45 * 60;
   }
@@ -51,7 +55,11 @@ function getModeLabel(debateMode) {
   return "Video/voice";
 }
 
-function getLengthLabel(format) {
+function getLengthLabel(format, durationMinutes) {
+  if (format === "custom") {
+    return `${durationMinutes || 10} min estimated`;
+  }
+
   if (format === "long") {
     return "45 min estimated";
   }
@@ -708,7 +716,7 @@ export default function DebateWorkspacePage() {
     }
 
     if (debate?.status === "live" && timerReady) {
-      const totalSeconds = getDebateDurationSeconds(debate?.format);
+      const totalSeconds = getDebateDurationSeconds(debate?.format, debate?.durationMinutes);
       const secondsPerRound =
         totalSeconds / Math.max(1, Number(debateRounds.length || 1));
 
@@ -801,7 +809,7 @@ export default function DebateWorkspacePage() {
   }, [debateId]);
 
   const estimatedDurationLabel = useMemo(() => {
-    return getLengthLabel(debate?.format || "short");
+    return getLengthLabel(debate?.format || "short", debate?.durationMinutes);
   }, [debate?.format]);
 
   const shouldShowResultGraphic =
@@ -863,7 +871,7 @@ export default function DebateWorkspacePage() {
       return;
     }
 
-    const totalSeconds = getDebateDurationSeconds(debate?.format);
+    const totalSeconds = getDebateDurationSeconds(debate?.format, debate?.durationMinutes);
 
     function updateTimer() {
       const startedAtMs = new Date(debate.startedAt).getTime();
