@@ -1,8 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+
+const LENGTH_OPTIONS = [
+  { value: "short", label: "5", subLabel: "Minutes", archiveLabel: "Short" },
+  { value: "medium", label: "20", subLabel: "Minutes", archiveLabel: "Medium" },
+  { value: "long", label: "45", subLabel: "Minutes", archiveLabel: "Long" },
+];
+
+const DOMAIN_OPTIONS = [
+  { value: "politics", label: "Politics" },
+  { value: "sports", label: "Sports" },
+  { value: "general", label: "General" },
+];
 
 async function getAuthHeaders() {
   const user = auth.currentUser;
@@ -12,29 +24,63 @@ async function getAuthHeaders() {
 }
 
 function getDebateModeLabel(mode) {
-  if (mode === "message") return "Message";
-  return "Video/voice";
+  if (mode === "message") return "Text";
+  return "Video/Voice";
+}
+
+function getLengthLabel(format) {
+  return (
+    LENGTH_OPTIONS.find((option) => option.value === format)?.archiveLabel ||
+    "Short"
+  );
+}
+
+function getDomainLabel(domain) {
+  return (
+    DOMAIN_OPTIONS.find((option) => option.value === domain)?.label ||
+    "Politics"
+  );
+}
+
+function normaliseRounds(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 1;
+  return Math.max(1, Math.min(20, Math.floor(number)));
 }
 
 export default function DebatesIndexPage() {
   const router = useRouter();
+
   const [user, setUser] = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
 
   const [title, setTitle] = useState("");
-  const [motionText, setMotionText] = useState("");
   const [debateMode, setDebateMode] = useState("video_voice");
   const [format, setFormat] = useState("short");
   const [domain, setDomain] = useState("politics");
-  const [rounds, setRounds] = useState(3);
+  const [rounds, setRounds] = useState(1);
+  const [roundSubtopics, setRoundSubtopics] = useState([]);
   const [creating, setCreating] = useState(false);
+
+  const roundCount = useMemo(() => normaliseRounds(rounds), [rounds]);
+  const showRoundSubtopics = roundCount > 1;
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    setRoundSubtopics((current) => {
+      if (roundCount <= 1) return [];
+
+      return Array.from({ length: roundCount }, (_, index) => {
+        return current[index] || "";
+      });
+    });
+  }, [roundCount]);
 
   async function loadDebates() {
     try {
@@ -62,12 +108,38 @@ export default function DebatesIndexPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  function updateRoundSubtopic(index, value) {
+    setRoundSubtopics((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
+  }
+
   async function onCreate(e) {
     e.preventDefault();
 
     try {
       setError("");
       setCreating(true);
+
+      const cleanTitle = title.trim();
+
+      if (!cleanTitle) {
+        throw new Error("Title is required.");
+      }
+
+      const cleanedSubtopics = showRoundSubtopics
+        ? roundSubtopics.slice(0, roundCount).map((item) => item.trim())
+        : [];
+
+      if (
+        showRoundSubtopics &&
+        (cleanedSubtopics.length !== roundCount ||
+          cleanedSubtopics.some((item) => !item))
+      ) {
+        throw new Error("Add a subtopic for every round.");
+      }
 
       const headers = {
         "Content-Type": "application/json",
@@ -78,12 +150,13 @@ export default function DebatesIndexPage() {
         method: "POST",
         headers,
         body: JSON.stringify({
-          title,
-          motionText,
+          title: cleanTitle,
+          motionText: cleanTitle,
           debateMode,
           format,
           domain,
-          rounds: Number(rounds),
+          rounds: roundCount,
+          roundSubtopics: cleanedSubtopics,
         }),
       });
 
@@ -107,152 +180,299 @@ export default function DebatesIndexPage() {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-3xl font-semibold mb-2">Debates</h1>
+      <div className="min-h-screen bg-slate-950 px-6 py-10 text-white">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/5 p-8">
+          <h1 className="text-3xl font-black">Debates</h1>
 
-        <p className="text-gray-600 mb-5">
-          Please sign in to create and manage debates.
-        </p>
+          <p className="mt-2 text-white/60">
+            Please sign in to create and manage debates.
+          </p>
 
-        <Link
-          href="/login"
-          className="inline-flex rounded-lg bg-indigo-600 px-4 py-2 text-white font-medium"
-        >
-          Go to login
-        </Link>
+          <Link
+            href="/login"
+            className="mt-6 inline-flex rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-slate-950"
+          >
+            Go to login
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-3xl font-semibold mb-1">Debates</h1>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_left,_rgba(14,165,233,0.28),_transparent_32%),linear-gradient(135deg,#020617,#07111f_45%,#020617)] px-6 py-8 text-white">
+      <div className="mx-auto max-w-7xl">
+        <h1 className="text-4xl font-black tracking-tight">Debate Hub</h1>
 
-      <p className="text-gray-600 mb-6">
-        Create a debate and jump into the workspace.
-      </p>
+        {error ? (
+          <div className="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+            {error}
+          </div>
+        ) : null}
 
-      {error ? (
-        <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-red-700">
-          {error}
-        </div>
-      ) : null}
+        <div className="mt-7 grid gap-7 xl:grid-cols-[1.05fr_1fr]">
+          <section>
+            <h2 className="text-2xl font-black">The Arena</h2>
 
-      <form onSubmit={onCreate} className="mb-8 rounded-xl border p-4 space-y-4">
-        <h2 className="text-2xl font-medium">Create Debate</h2>
-
-        <input
-          className="w-full rounded border p-3"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-
-        <textarea
-          className="w-full rounded border p-3 min-h-[120px]"
-          placeholder="Motion text"
-          value={motionText}
-          onChange={(e) => setMotionText(e.target.value)}
-          required
-        />
-
-        <div className="grid md:grid-cols-4 gap-3">
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-gray-700">Format</div>
-            <select
-              className="w-full rounded border p-3"
-              value={debateMode}
-              onChange={(e) => setDebateMode(e.target.value)}
+            <form
+              onSubmit={onCreate}
+              className="mt-4 rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-6 shadow-[0_0_35px_rgba(14,165,233,0.12)] backdrop-blur"
             >
-              <option value="video_voice">Video/voice</option>
-              <option value="message">Message</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-gray-700">Length</div>
-            <select
-              className="w-full rounded border p-3"
-              value={format}
-              onChange={(e) => setFormat(e.target.value)}
-            >
-              <option value="short">Short</option>
-              <option value="long">Long</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-gray-700">Topic</div>
-            <select
-              className="w-full rounded border p-3"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-            >
-              <option value="politics">Politics</option>
-              <option value="sports">Sports</option>
-              <option value="general">General</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <div className="mb-1 text-sm font-medium text-gray-700">Rounds</div>
-            <input
-              className="w-full rounded border p-3"
-              type="number"
-              min={1}
-              max={20}
-              value={rounds}
-              onChange={(e) => setRounds(e.target.value)}
-            />
-          </label>
-        </div>
-
-        <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
-          {debateMode === "message"
-            ? "Message debates use a live text chat instead of Daily video. The AI judge scores the written transcript."
-            : "Video/voice debates use Daily video and transcription. The AI judge scores the captured transcript."}
-        </div>
-
-        <button
-          disabled={creating}
-          className="rounded-lg border px-5 py-3 font-medium disabled:opacity-50"
-          type="submit"
-        >
-          {creating ? "Creating..." : "Create debate"}
-        </button>
-      </form>
-
-      <div>
-        <h3 className="text-2xl font-medium mb-3">Recent debates</h3>
-
-        {loading ? (
-          <p className="text-gray-500">Loading...</p>
-        ) : items.length === 0 ? (
-          <p className="text-gray-600">No debates yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {items.map((d) => (
-              <div
-                key={d.id}
-                className="rounded-lg border p-3 flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-medium">{d.title || "Untitled debate"}</div>
-
-                  <div className="text-sm text-gray-600">
-                    {getDebateModeLabel(d.debateMode)} · {d.format} · {d.domain} ·{" "}
-                    {d.status}
-                  </div>
+              <div className="flex gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 text-sm font-black text-cyan-200">
+                  1
                 </div>
 
-                <Link className="text-indigo-600 underline" href={`/debates/${d.id}`}>
-                  Open workspace
-                </Link>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-black">Craft the Motion</h3>
+
+                  <label className="mt-5 block">
+                    <div className="mb-2 text-sm font-semibold text-white/80">
+                      Title
+                    </div>
+
+                    <input
+                      className="w-full rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-300"
+                      placeholder="Enter debate title..."
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      required
+                    />
+                  </label>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+
+              <div className="mt-8 flex gap-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-cyan-100">
+                  2
+                </div>
+
+                <div className="flex-1">
+                  <h3 className="text-2xl font-black">Configure Rules</h3>
+
+                  <div className="mt-6 grid gap-5">
+                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
+                      <div className="text-sm font-semibold text-white/80">
+                        Format
+                      </div>
+
+                      <div className="flex w-fit rounded-full border border-white/10 bg-slate-900/80 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setDebateMode("video_voice")}
+                          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+                            debateMode === "video_voice"
+                              ? "bg-white/15 text-white shadow"
+                              : "text-white/50 hover:text-white"
+                          }`}
+                        >
+                          Video/Voice
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDebateMode("message")}
+                          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+                            debateMode === "message"
+                              ? "bg-white/15 text-white shadow"
+                              : "text-white/50 hover:text-white"
+                          }`}
+                        >
+                          Text
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
+                      <div className="text-sm font-semibold text-white/80">
+                        Length
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-4">
+                        {LENGTH_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setFormat(option.value)}
+                            className={`rounded-xl border px-4 py-4 text-center transition ${
+                              format === option.value
+                                ? "border-cyan-300 bg-cyan-400/15 shadow-[0_0_25px_rgba(14,165,233,0.25)]"
+                                : "border-white/15 bg-slate-950/50 hover:border-white/30"
+                            }`}
+                          >
+                            <div className="text-2xl font-black">
+                              {option.label}
+                            </div>
+                            <div className="text-sm text-white/65">
+                              {option.subLabel}
+                            </div>
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          disabled
+                          className="rounded-xl border border-white/10 bg-slate-950/30 px-4 py-4 text-center text-white/35"
+                        >
+                          <div className="text-2xl font-black">Custom</div>
+                          <div className="text-sm">Time</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
+                      <div className="text-sm font-semibold text-white/80">
+                        Topic
+                      </div>
+
+                      <select
+                        className="w-full max-w-sm rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
+                        value={domain}
+                        onChange={(e) => setDomain(e.target.value)}
+                      >
+                        {DOMAIN_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
+                      <div className="text-sm font-semibold text-white/80">
+                        Rounds
+                      </div>
+
+                      <input
+                        className="w-28 rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={rounds}
+                        onChange={(e) => setRounds(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {showRoundSubtopics ? (
+                    <div className="mt-8 border-t border-white/10 pt-7">
+                      <h3 className="text-2xl font-black">Round Settings</h3>
+
+                      <p className="mt-1 text-sm text-white/50">
+                        Because this debate has more than one round, every round
+                        needs a required subtopic.
+                      </p>
+
+                      <div className="mt-5 space-y-4">
+                        {Array.from({ length: roundCount }, (_, index) => (
+                          <label key={index} className="block">
+                            <div className="mb-2 text-sm font-semibold text-white/80">
+                              Round {index + 1}: Subtopic
+                            </div>
+
+                            <input
+                              className="w-full rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-300"
+                              placeholder={`Enter subtopic for round ${index + 1}`}
+                              value={roundSubtopics[index] || ""}
+                              onChange={(e) =>
+                                updateRoundSubtopic(index, e.target.value)
+                              }
+                              required
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-7 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
+                      This is a one-round debate, so the debate title will be
+                      used as the topic.
+                    </div>
+                  )}
+
+                  <button
+                    disabled={creating}
+                    className="mt-7 rounded-xl bg-cyan-400 px-6 py-3 font-black text-slate-950 shadow-[0_0_28px_rgba(14,165,233,0.35)] disabled:opacity-50"
+                    type="submit"
+                  >
+                    {creating ? "Creating..." : "Create debate"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-black">The Archive</h2>
+
+            {loading ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
+                Loading debates...
+              </div>
+            ) : items.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
+                No debates yet.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-5 lg:grid-cols-2">
+                {items.map((d) => (
+                  <div
+                    key={d.id}
+                    className="rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-4 shadow-[0_0_24px_rgba(14,165,233,0.14)]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-xl font-black">
+                          {d.title || "Untitled debate"}
+                        </h3>
+
+                        <div className="mt-2 space-y-1 text-sm text-white/65">
+                          <div>Format: {getDebateModeLabel(d.debateMode)}</div>
+                          <div>Length: {getLengthLabel(d.format)}</div>
+                          <div>Topic: {getDomainLabel(d.domain)}</div>
+                          <div>
+                            Status:{" "}
+                            <span
+                              className={
+                                d.status === "ended"
+                                  ? "text-white/70"
+                                  : d.status === "live"
+                                    ? "text-green-300"
+                                    : "text-cyan-300"
+                              }
+                            >
+                              {d.status}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">
+                        {d.debateMode === "message" ? "Text" : "Live"}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <Link
+                        className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
+                        href={`/debates/${d.id}`}
+                      >
+                        Replay
+                      </Link>
+
+                      <Link
+                        className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
+                        href={`/debates/${d.id}`}
+                      >
+                        View Analysis
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

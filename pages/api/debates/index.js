@@ -1,9 +1,15 @@
 import { allowMethods, badRequest, requireActor } from "@/lib/debates/http";
 import { createDebate, listDebates } from "@/lib/debates/store";
 
-const FORMATS = new Set(["short", "long"]);
+const FORMATS = new Set(["short", "medium", "long"]);
 const DEBATE_MODES = new Set(["video_voice", "message"]);
 const DOMAINS = new Set(["politics", "sports", "general"]);
+
+function normaliseRounds(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 1;
+  return Math.max(1, Math.min(20, Math.floor(number)));
+}
 
 export default async function handler(req, res) {
   if (!allowMethods(req, res, ["GET", "POST"])) return;
@@ -19,12 +25,17 @@ export default async function handler(req, res) {
     title,
     motionText,
     debateMode = "video_voice",
-    format,
-    domain,
-    rounds,
+    format = "short",
+    domain = "politics",
+    rounds = 1,
+    roundSubtopics = [],
   } = req.body || {};
 
-  if (!title || !motionText) {
+  const cleanTitle = String(title || "").trim();
+  const cleanMotionText = String(motionText || title || "").trim();
+  const roundCount = normaliseRounds(rounds);
+
+  if (!cleanTitle || !cleanMotionText) {
     return badRequest(res, "title and motionText are required");
   }
 
@@ -33,11 +44,26 @@ export default async function handler(req, res) {
   }
 
   if (!FORMATS.has(format)) {
-    return badRequest(res, "format must be short or long");
+    return badRequest(res, "format must be short, medium, or long");
   }
 
   if (!DOMAINS.has(domain)) {
     return badRequest(res, "domain must be politics, sports, or general");
+  }
+
+  const cleanedRoundSubtopics =
+    roundCount > 1
+      ? Array.isArray(roundSubtopics)
+        ? roundSubtopics.slice(0, roundCount).map((item) => String(item || "").trim())
+        : []
+      : [];
+
+  if (
+    roundCount > 1 &&
+    (cleanedRoundSubtopics.length !== roundCount ||
+      cleanedRoundSubtopics.some((item) => !item))
+  ) {
+    return badRequest(res, "A subtopic is required for every round");
   }
 
   const actorUid = await requireActor(req, res);
@@ -45,12 +71,13 @@ export default async function handler(req, res) {
   if (!actorUid) return;
 
   const debate = await createDebate({
-    title,
-    motionText,
+    title: cleanTitle,
+    motionText: cleanMotionText,
     debateMode,
     format,
     domain,
-    rounds: Number(rounds || (format === "short" ? 3 : 6)),
+    rounds: roundCount,
+    roundSubtopics: cleanedRoundSubtopics,
     createdByUid: actorUid,
   });
 

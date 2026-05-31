@@ -31,14 +31,16 @@ function formatTimer(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function getDebateDurationSeconds(format, roundCount) {
-  const safeRoundCount = Math.max(1, Number(roundCount || 1));
-
+function getDebateDurationSeconds(format) {
   if (format === "long") {
-    return safeRoundCount * 3 * 60;
+    return 45 * 60;
   }
 
-  return safeRoundCount * 1 * 60;
+  if (format === "medium") {
+    return 20 * 60;
+  }
+
+  return 5 * 60;
 }
 
 function getModeLabel(debateMode) {
@@ -47,6 +49,30 @@ function getModeLabel(debateMode) {
   }
 
   return "Video/voice";
+}
+
+function getLengthLabel(format) {
+  if (format === "long") {
+    return "45 min estimated";
+  }
+
+  if (format === "medium") {
+    return "20 min estimated";
+  }
+
+  return "5 min estimated";
+}
+
+function getRoundDisplay(round) {
+  if (!round) {
+    return "";
+  }
+
+  if (round.subtopic) {
+    return `Round ${round.roundNumber}: ${round.subtopic}`;
+  }
+
+  return `Round ${round.roundNumber}`;
 }
 
 function MessageDebatePanel({
@@ -596,6 +622,7 @@ export default function DebateWorkspacePage() {
   const [scorecard, setScorecard] = useState(null);
   const [showTranscript, setShowTranscript] = useState(false);
 
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [timerReady, setTimerReady] = useState(false);
 
@@ -673,13 +700,37 @@ export default function DebateWorkspacePage() {
     return openRound?.id || "";
   }, [debate]);
 
-  const currentRound = useMemo(() => {
-    const rounds = debate?.rounds || [];
-    return rounds.find((round) => round.status !== "closed") || null;
-  }, [debate]);
+  const activeRound = useMemo(() => {
+    const debateRounds = debate?.rounds || [];
+
+    if (!debateRounds.length) {
+      return null;
+    }
+
+    if (debate?.status === "live" && timerReady) {
+      const totalSeconds = getDebateDurationSeconds(debate?.format);
+      const secondsPerRound =
+        totalSeconds / Math.max(1, Number(debateRounds.length || 1));
+
+      const activeIndex = Math.min(
+        debateRounds.length - 1,
+        Math.max(0, Math.floor(elapsedSeconds / secondsPerRound))
+      );
+
+      return debateRounds[activeIndex] || debateRounds[0] || null;
+    }
+
+    return (
+      debateRounds.find((round) => round.status !== "closed") ||
+      debateRounds[0] ||
+      null
+    );
+  }, [debate?.rounds, debate?.status, debate?.format, elapsedSeconds, timerReady]);
+
+  const currentRound = activeRound;
 
   const currentRoundLabel = currentRound
-    ? `Round ${currentRound.roundNumber}`
+    ? getRoundDisplay(currentRound)
     : debate?.status === "ended"
       ? "Debate ended"
       : "Not started";
@@ -750,18 +801,8 @@ export default function DebateWorkspacePage() {
   }, [debateId]);
 
   const estimatedDurationLabel = useMemo(() => {
-    const format = debate?.format || "short";
-    const count = Number(roundCount || 0);
-
-    if (!count) {
-      return format === "long" ? "Long format" : "Short format";
-    }
-
-    const minutesPerRound = format === "long" ? 3 : 1;
-    const totalMinutes = count * minutesPerRound;
-
-    return `${totalMinutes} min estimated`;
-  }, [debate?.format, roundCount]);
+    return getLengthLabel(debate?.format || "short");
+  }, [debate?.format]);
 
   const shouldShowResultGraphic =
     debate?.status === "ended" ||
@@ -822,20 +863,23 @@ export default function DebateWorkspacePage() {
       return;
     }
 
-    const totalSeconds = getDebateDurationSeconds(debate?.format, roundCount);
+    const totalSeconds = getDebateDurationSeconds(debate?.format);
 
     function updateTimer() {
       const startedAtMs = new Date(debate.startedAt).getTime();
 
       if (!Number.isFinite(startedAtMs)) {
+        setElapsedSeconds(0);
         setRemainingSeconds(totalSeconds);
         setTimerReady(true);
         return;
       }
 
       const diffSeconds = Math.floor((Date.now() - startedAtMs) / 1000);
-      const remaining = Math.max(0, totalSeconds - Math.max(0, diffSeconds));
+      const elapsed = Math.max(0, diffSeconds);
+      const remaining = Math.max(0, totalSeconds - elapsed);
 
+      setElapsedSeconds(elapsed);
       setRemainingSeconds(remaining);
       setTimerReady(true);
     }
@@ -845,7 +889,7 @@ export default function DebateWorkspacePage() {
     const id = setInterval(updateTimer, 1000);
 
     return () => clearInterval(id);
-  }, [debate?.status, debate?.startedAt, debate?.format, roundCount]);
+  }, [debate?.status, debate?.startedAt, debate?.format]);
 
   useEffect(() => {
     if (debate?.status !== "live") {
@@ -1235,9 +1279,10 @@ export default function DebateWorkspacePage() {
             <div className="font-medium">Status: {debate?.status}</div>
 
             <div className="text-sm text-gray-600 mt-1">
-              Mode: {getModeLabel(debateMode)} · Rounds: {roundCount} · Closed:{" "}
-              {closedRoundCount} · Live session: {hasLiveSession ? "yes" : "no"} ·
-              Participants: {participants.length}/2 · Role:{" "}
+              Mode: {getModeLabel(debateMode)} · Rounds: {roundCount} · Active:{" "}
+              {currentRoundLabel} · Closed: {closedRoundCount} · Live session:{" "}
+              {hasLiveSession ? "yes" : "no"} · Participants:{" "}
+              {participants.length}/2 · Role:{" "}
               {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·
               Duration: {estimatedDurationLabel} · Transcript segments:{" "}
               {(workspace?.transcriptSegments || []).length}
@@ -1338,7 +1383,9 @@ export default function DebateWorkspacePage() {
 
           {!isOwner && isVideoVoiceDebate && !liveRoomUrl ? (
             <div className="rounded-xl border p-5 text-center">
-              <h2 className="text-xl font-semibold">Waiting for host to start video</h2>
+              <h2 className="text-xl font-semibold">
+                Waiting for host to start video
+              </h2>
 
               <p className="mt-2 text-gray-600">
                 You have joined the debate. The video room will appear here once
