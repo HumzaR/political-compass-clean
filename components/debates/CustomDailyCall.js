@@ -114,30 +114,23 @@ function isFinalTranscriptEvent(event) {
 function ParticipantTile({ sessionId, fallbackName, label }) {
   const participantName = useParticipantProperty(sessionId, "user_name");
   const isLocal = useParticipantProperty(sessionId, "local");
-  const videoState = useParticipantProperty(sessionId, [
-    "tracks",
-    "video",
-    "state",
-  ]);
-  const audioState = useParticipantProperty(sessionId, [
-    "tracks",
-    "audio",
-    "state",
-  ]);
+  const tracks = useParticipantProperty(sessionId, "tracks") || {};
 
   const displayName = participantName || fallbackName || "Debater";
+  const videoState = tracks?.video?.state;
+  const audioState = tracks?.audio?.state;
+
   const cameraOn = videoState === "playable";
   const micOn = audioState === "playable";
 
   return (
     <div className="relative min-h-[340px] overflow-hidden rounded-2xl border border-white/10 bg-neutral-900">
-      {cameraOn ? (
+      {cameraOn && sessionId ? (
         <DailyVideo
           sessionId={sessionId}
           type="video"
           fit="cover"
           automirror
-          className="h-full w-full"
           style={{
             width: "100%",
             height: "100%",
@@ -623,7 +616,7 @@ function CustomDailyCallInner({
 }) {
   const callObject = useDaily();
   const meetingState = useMeetingState();
-  const participantIds = useParticipantIds({ sort: "joined_at" });
+ const participantIds = useParticipantIds() || [];
 
   const [joinError, setJoinError] = useState("");
   const [joining, setJoining] = useState(false);
@@ -716,12 +709,17 @@ function CustomDailyCallInner({
     transcriptionStartedRef.current = true;
     setTranscriptionStatus("starting");
 
-    callObject
-      .startTranscription({
-        language: "en",
-        punctuate: true,
-        includeRawResponse: true,
-      })
+    if (typeof callObject.startTranscription !== "function") {
+  setTranscriptionStatus("unsupported");
+  return;
+}
+
+callObject
+  .startTranscription({
+    language: "en",
+    punctuate: true,
+    includeRawResponse: true,
+  })
       .then(() => {
         setTranscriptionStatus("on");
       })
