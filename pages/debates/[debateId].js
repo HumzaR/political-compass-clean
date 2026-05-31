@@ -712,13 +712,17 @@ export default function DebateWorkspacePage() {
     }
   }
 
-  async function onCreateLiveSession() {
-    try {
-      if (!isOwner) {
-        throw new Error("Only the debate owner can create the live session.");
-      }
+async function onCreateLiveSession() {
+  try {
+    if (!isOwner) {
+      throw new Error("Only the debate owner can create the live session.");
+    }
 
-      await callApi(`/api/debates/${debateId}/live/session`, "POST");
+    if (isMessageDebate) {
+      throw new Error("Message debates do not use a video/voice session.");
+    }
+
+    await callApi(`/api/debates/${debateId}/live/session`, "POST");
 
       setNotice("Live session created.");
       await loadWorkspace();

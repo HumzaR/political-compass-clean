@@ -48,6 +48,12 @@ export default async function handler(req, res) {
     const debate = await getDebate(debateId);
     if (!(await requireDebateOwner(req, res, debate))) return;
 
+    if (debate.debateMode === "message") {
+      return res.status(409).json({
+        error: "Message debates do not use a Daily video/voice session.",
+      });
+    }
+
     if (debate.live?.roomUrl) {
       return res.status(200).json({ session: debate.live });
     }
@@ -62,7 +68,7 @@ export default async function handler(req, res) {
 
     const roomName = `debate-${debate.id}`;
     const nowSeconds = Math.floor(Date.now() / 1000);
-    const expiresAt = nowSeconds + 60 * 60 * 2; // 2 hours
+    const expiresAt = nowSeconds + 60 * 60 * 2;
 
     const room = await callDailyApi("/rooms", {
       name: roomName,
