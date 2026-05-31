@@ -701,39 +701,55 @@ function CustomDailyCallInner({
     };
   }, [callObject, speakerBySessionId]);
 
+ useEffect(() => {
+  if (!callObject || !joined || !isOwner || showResultGraphic) return;
+  if (debateStatus !== "live") return;
+  if (transcriptionStartedRef.current) return;
+
+  transcriptionStartedRef.current = true;
+  setTranscriptionStatus("starting");
+
+  if (typeof callObject.startTranscription !== "function") {
+    setTranscriptionStatus("unsupported");
+    return;
+  }
+
+  try {
+    const result = callObject.startTranscription({
+      language: "en",
+      punctuate: true,
+      includeRawResponse: true,
+    });
+
+    if (result && typeof result.then === "function") {
+      result
+        .then(() => {
+          setTranscriptionStatus("on");
+        })
+        .catch((error) => {
+          console.error("Could not start Daily transcription", error);
+          setTranscriptionStatus("error");
+        });
+    } else {
+      setTranscriptionStatus("on");
+    }
+  } catch (error) {
+    console.error("Could not start Daily transcription", error);
+    setTranscriptionStatus("error");
+  }
+}, [callObject, joined, isOwner, debateStatus, showResultGraphic]);
+
   useEffect(() => {
-    if (!callObject || !joined || !isOwner || showResultGraphic) return;
-    if (debateStatus !== "live") return;
-    if (transcriptionStartedRef.current) return;
+  if (!showResultGraphic || !joined || !callObject) return;
 
-    transcriptionStartedRef.current = true;
-    setTranscriptionStatus("starting");
+  try {
+    const result = callObject.leave();
 
-    if (typeof callObject.startTranscription !== "function") {
-  setTranscriptionStatus("unsupported");
-  return;
-}
-
-callObject
-  .startTranscription({
-    language: "en",
-    punctuate: true,
-    includeRawResponse: true,
-  })
-      .then(() => {
-        setTranscriptionStatus("on");
-      })
-      .catch((error) => {
-        console.error("Could not start Daily transcription", error);
-        setTranscriptionStatus("error");
-      });
-  }, [callObject, joined, isOwner, debateStatus, showResultGraphic]);
-
-  useEffect(() => {
-    if (!showResultGraphic || !joined || !callObject) return;
-
-    callObject.leave().catch(() => null);
-  }, [showResultGraphic, joined, callObject]);
+    if (result && typeof result.catch === "function") {
+      result.catch(() => null);
+    }
+  } catch {}
+}, [showResultGraphic, joined, callObject]);
 
   async function joinCall() {
     if (!callObject || !roomUrl || joined || joiningNow) return;
@@ -880,14 +896,23 @@ export default function CustomDailyCall(props) {
     return () => {
       destroyedRef.current = true;
 
-      dailyCallObject
-        .leave()
-        .catch(() => null)
-        .finally(() => {
-          try {
-            dailyCallObject.destroy();
-          } catch {}
-        });
+      try {
+  const leaveResult = dailyCallObject.leave();
+
+  if (leaveResult && typeof leaveResult.finally === "function") {
+    leaveResult.finally(() => {
+      try {
+        dailyCallObject.destroy();
+      } catch {}
+    });
+  } else {
+    dailyCallObject.destroy();
+  }
+} catch {
+  try {
+    dailyCallObject.destroy();
+  } catch {}
+}
     };
   }, []);
 
