@@ -16,6 +16,8 @@ const DOMAIN_OPTIONS = [
   { value: "general", label: "General" },
 ];
 
+const DEFAULT_HISTORY_COUNT = 3;
+
 async function getAuthHeaders() {
   const user = auth.currentUser;
   if (!user) return {};
@@ -48,6 +50,60 @@ function normaliseRounds(value) {
   return Math.max(1, Math.min(20, Math.floor(number)));
 }
 
+function DebateHistoryCard({ debate }) {
+  return (
+    <div className="rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-5 shadow-[0_0_24px_rgba(14,165,233,0.14)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="truncate text-2xl font-black">
+            {debate.title || "Untitled debate"}
+          </h3>
+
+          <div className="mt-3 space-y-1 text-base text-white/65">
+            <div>Format: {getDebateModeLabel(debate.debateMode)}</div>
+            <div>Length: {getLengthLabel(debate.format)}</div>
+            <div>Topic: {getDomainLabel(debate.domain)}</div>
+            <div>
+              Status:{" "}
+              <span
+                className={
+                  debate.status === "ended"
+                    ? "text-white/70"
+                    : debate.status === "live"
+                      ? "text-green-300"
+                      : "text-cyan-300"
+                }
+              >
+                {debate.status}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="shrink-0 rounded-full bg-white/10 px-4 py-2 text-sm text-white/60">
+          {debate.debateMode === "message" ? "Text" : "Live"}
+        </div>
+      </div>
+
+      <div className="mt-5 flex gap-3">
+        <Link
+          className="rounded-lg border border-cyan-200/20 px-5 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+          href={`/debates/${debate.id}`}
+        >
+          Replay
+        </Link>
+
+        <Link
+          className="rounded-lg border border-cyan-200/20 px-5 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+          href={`/debates/${debate.id}`}
+        >
+          View Analysis
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function DebatesIndexPage() {
   const router = useRouter();
 
@@ -63,9 +119,11 @@ export default function DebatesIndexPage() {
   const [rounds, setRounds] = useState(1);
   const [roundSubtopics, setRoundSubtopics] = useState([]);
   const [creating, setCreating] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const roundCount = useMemo(() => normaliseRounds(rounds), [rounds]);
   const showRoundSubtopics = roundCount > 1;
+  const visibleHistory = items.slice(0, DEFAULT_HISTORY_COUNT);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
@@ -88,7 +146,7 @@ export default function DebatesIndexPage() {
       setLoading(true);
 
       const headers = await getAuthHeaders();
-      const res = await fetch("/api/debates?limit=25", { headers });
+      const res = await fetch("/api/debates?limit=50", { headers });
       const body = await res.json().catch(() => ({}));
 
       if (!res.ok) throw new Error(body?.error || "Failed to load debates");
@@ -190,7 +248,7 @@ export default function DebatesIndexPage() {
 
           <Link
             href="/login"
-            className="mt-6 inline-flex rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-slate-950"
+            className="mt-6 inline-flex rounded-xl bg-cyan-500 px-5 py-3 font-medium text-slate-950"
           >
             Go to login
           </Link>
@@ -312,9 +370,11 @@ export default function DebatesIndexPage() {
                         <button
                           type="button"
                           disabled
-                          className="rounded-xl border border-white/10 bg-slate-950/30 px-4 py-4 text-center text-white/35"
+                          className="rounded-xl border border-white/10 bg-slate-950/30 px-3 py-4 text-center text-white/35"
                         >
-                          <div className="text-2xl font-black">Custom</div>
+                          <div className="text-xl font-black leading-tight">
+                            Custom
+                          </div>
                           <div className="text-sm">Time</div>
                         </button>
                       </div>
@@ -392,7 +452,7 @@ export default function DebatesIndexPage() {
 
                   <button
                     disabled={creating}
-                    className="mt-7 rounded-xl bg-cyan-400 px-6 py-3 font-black text-slate-950 shadow-[0_0_28px_rgba(14,165,233,0.35)] disabled:opacity-50"
+                    className="mt-7 rounded-xl bg-cyan-400 px-6 py-3 font-medium text-slate-950 shadow-[0_0_28px_rgba(14,165,233,0.35)] disabled:opacity-50"
                     type="submit"
                   >
                     {creating ? "Creating..." : "Create debate"}
@@ -403,7 +463,19 @@ export default function DebatesIndexPage() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-black">The Archive</h2>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-2xl font-black">History</h2>
+
+              {items.length > DEFAULT_HISTORY_COUNT ? (
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(true)}
+                  className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+                >
+                  See more
+                </button>
+              ) : null}
+            </div>
 
             {loading ? (
               <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
@@ -414,66 +486,44 @@ export default function DebatesIndexPage() {
                 No debates yet.
               </div>
             ) : (
-              <div className="mt-4 grid gap-5 lg:grid-cols-2">
-                {items.map((d) => (
-                  <div
-                    key={d.id}
-                    className="rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-4 shadow-[0_0_24px_rgba(14,165,233,0.14)]"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-xl font-black">
-                          {d.title || "Untitled debate"}
-                        </h3>
-
-                        <div className="mt-2 space-y-1 text-sm text-white/65">
-                          <div>Format: {getDebateModeLabel(d.debateMode)}</div>
-                          <div>Length: {getLengthLabel(d.format)}</div>
-                          <div>Topic: {getDomainLabel(d.domain)}</div>
-                          <div>
-                            Status:{" "}
-                            <span
-                              className={
-                                d.status === "ended"
-                                  ? "text-white/70"
-                                  : d.status === "live"
-                                    ? "text-green-300"
-                                    : "text-cyan-300"
-                              }
-                            >
-                              {d.status}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">
-                        {d.debateMode === "message" ? "Text" : "Live"}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex gap-2">
-                      <Link
-                        className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
-                        href={`/debates/${d.id}`}
-                      >
-                        Replay
-                      </Link>
-
-                      <Link
-                        className="rounded-lg border border-cyan-200/20 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
-                        href={`/debates/${d.id}`}
-                      >
-                        View Analysis
-                      </Link>
-                    </div>
-                  </div>
+              <div className="mt-4 space-y-5">
+                {visibleHistory.map((debate) => (
+                  <DebateHistoryCard key={debate.id} debate={debate} />
                 ))}
               </div>
             )}
           </section>
         </div>
       </div>
+
+      {showHistoryModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
+          <div className="w-full max-w-3xl rounded-2xl border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-5">
+              <div>
+                <h2 className="text-2xl font-black">Debate History</h2>
+                <p className="mt-1 text-sm text-white/50">
+                  All debates you have created or opened recently.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
+              {items.map((debate) => (
+                <DebateHistoryCard key={debate.id} debate={debate} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
