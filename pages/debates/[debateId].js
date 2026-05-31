@@ -157,6 +157,7 @@ function MessageDebatePanel({
           <div className="flex h-[320px] items-center justify-center text-center text-gray-500">
             <div>
               <div className="text-lg font-medium">No messages yet</div>
+
               <p className="mt-1 text-sm">
                 Start the debate, then both participants can send messages.
               </p>
@@ -198,6 +199,389 @@ function MessageDebatePanel({
   );
 }
 
+const MESSAGE_DIMENSION_LABELS = {
+  argumentQuality: "Argument quality",
+  factualAccuracy: "Evidence usage",
+  rebuttalEffectiveness: "Rebuttal effectiveness",
+  rhetoricDelivery: "Delivery and rhetoric",
+  topicConsistency: "Topic consistency",
+};
+
+function getMessageScoreForSpeaker(finalScore, speakerId) {
+  const item = finalScore?.leaderboard?.find(
+    (entry) => entry.speakerId === speakerId
+  );
+
+  return Number(item?.score || 0);
+}
+
+function getMessageSpeakerBreakdown(finalScore, speakerId) {
+  return finalScore?.speakerBreakdown?.[speakerId] || null;
+}
+
+function getMessageSpeakerName(speakerId, speakerAName, speakerBName) {
+  if (speakerId === "speakerA") return speakerAName;
+  if (speakerId === "speakerB") return speakerBName;
+  return speakerId || "Unknown speaker";
+}
+
+function MessageScoreCard({ label, name, score, animatedScore }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+        {label}
+      </div>
+
+      <div className="mt-2 text-xl font-bold">{name}</div>
+
+      <div className="mt-6 font-mono text-6xl font-black">
+        {animatedScore.toFixed(1)}
+      </div>
+
+      <div className="mt-4 h-4 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-white transition-all duration-200"
+          style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+        />
+      </div>
+
+      <div className="mt-2 text-sm text-white/50">Final score out of 100</div>
+    </div>
+  );
+}
+
+function MessageDimensionBars({ dimensions }) {
+  const safeDimensions = dimensions || {};
+
+  return (
+    <div className="mt-4 space-y-3">
+      {Object.entries(MESSAGE_DIMENSION_LABELS).map(([key, label]) => {
+        const value = Math.max(
+          0,
+          Math.min(100, Number(safeDimensions[key] || 0))
+        );
+
+        return (
+          <div key={key}>
+            <div className="flex justify-between text-xs text-white/60">
+              <span>{label}</span>
+              <span>{value.toFixed(1)}</span>
+            </div>
+
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-white/80"
+                style={{ width: `${value}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MessageTextList({ title, items, emptyText }) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-xl bg-white/5 p-4">
+      <h5 className="text-sm font-bold text-white">{title}</h5>
+
+      {safeItems.length ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-white/70">
+          {safeItems.slice(0, 4).map((item, index) => (
+            <li key={`${title}-${index}`}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-white/45">{emptyText}</p>
+      )}
+    </div>
+  );
+}
+
+function MessageEvidenceQuotes({ quotes }) {
+  const safeQuotes = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-xl bg-white/5 p-4">
+      <h5 className="text-sm font-bold text-white">Evidence from messages</h5>
+
+      {safeQuotes.length ? (
+        <div className="mt-3 space-y-2">
+          {safeQuotes.slice(0, 3).map((quote, index) => (
+            <blockquote
+              key={`message-quote-${index}`}
+              className="border-l-2 border-indigo-300 pl-3 text-sm leading-6 text-white/70"
+            >
+              “{quote}”
+            </blockquote>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-white/45">
+          No specific message quotes were returned by the judge.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MessageSpeakerJudgeCard({ label, name, breakdown }) {
+  const score = Number(breakdown?.score || 0);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+            {label}
+          </div>
+
+          <h4 className="mt-1 text-2xl font-black">{name}</h4>
+
+          <p className="mt-2 text-sm leading-6 text-white/60">
+            {breakdown?.summary || "No judging summary available."}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white px-4 py-2 text-right text-neutral-950">
+          <div className="text-xs font-semibold uppercase">Score</div>
+          <div className="text-2xl font-black">{score.toFixed(1)}</div>
+        </div>
+      </div>
+
+      <MessageDimensionBars dimensions={breakdown?.dimensions} />
+
+      <div className="mt-5 grid gap-3">
+        <MessageTextList
+          title="Strengths"
+          items={breakdown?.strengths}
+          emptyText="No clear strengths detected."
+        />
+
+        <MessageTextList
+          title="Weaknesses"
+          items={breakdown?.weaknesses}
+          emptyText="No clear weaknesses detected."
+        />
+
+        <MessageEvidenceQuotes quotes={breakdown?.evidenceQuotes} />
+      </div>
+    </div>
+  );
+}
+
+function MessageResultGraphic({ finalScore, speakerAName, speakerBName }) {
+  const [animatedA, setAnimatedA] = useState(0);
+  const [animatedB, setAnimatedB] = useState(0);
+  const [stage, setStage] = useState("calculating");
+
+  const speakerAScore = getMessageScoreForSpeaker(finalScore, "speakerA");
+  const speakerBScore = getMessageScoreForSpeaker(finalScore, "speakerB");
+
+  const speakerABreakdown = getMessageSpeakerBreakdown(finalScore, "speakerA");
+  const speakerBBreakdown = getMessageSpeakerBreakdown(finalScore, "speakerB");
+
+  const finalScoreKey = useMemo(() => {
+    if (!finalScore) return "no-final-score";
+
+    return [
+      finalScore.computedAt || "",
+      finalScore.winnerSpeakerId || "",
+      finalScore.tie ? "tie" : "not-tie",
+      speakerAScore,
+      speakerBScore,
+    ].join("|");
+  }, [
+    finalScore?.computedAt,
+    finalScore?.winnerSpeakerId,
+    finalScore?.tie,
+    speakerAScore,
+    speakerBScore,
+  ]);
+
+  const winnerId = finalScore?.tie
+    ? null
+    : finalScore?.winnerSpeakerId ||
+      finalScore?.leaderboard?.[0]?.speakerId ||
+      null;
+
+  const winnerName = winnerId
+    ? getMessageSpeakerName(winnerId, speakerAName, speakerBName)
+    : null;
+
+  const explanation = finalScore?.explanation || {
+    winnerReason: "The AI judge is reading the message transcript.",
+    loserReason: "The final breakdown will appear once scoring is complete.",
+  };
+
+  useEffect(() => {
+    setAnimatedA(0);
+    setAnimatedB(0);
+
+    if (!finalScore) {
+      setStage("calculating");
+      return;
+    }
+
+    setStage("counting");
+
+    const durationMs = 2600;
+    const startMs = Date.now();
+
+    const intervalId = setInterval(() => {
+      const progress = Math.min(1, (Date.now() - startMs) / durationMs);
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+      setAnimatedA(speakerAScore * easedProgress);
+      setAnimatedB(speakerBScore * easedProgress);
+
+      if (progress >= 1) clearInterval(intervalId);
+    }, 40);
+
+    const winnerTimerId = setTimeout(() => {
+      setStage("winner");
+    }, durationMs + 300);
+
+    const summaryTimerId = setTimeout(() => {
+      setStage("summary");
+    }, durationMs + 2100);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(winnerTimerId);
+      clearTimeout(summaryTimerId);
+    };
+  }, [finalScoreKey]);
+
+  if (!finalScore) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center rounded-2xl bg-neutral-950 p-8 text-white">
+        <div className="text-center">
+          <div className="mx-auto h-14 w-14 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+
+          <h3 className="mt-6 text-3xl font-black">Calculating result...</h3>
+
+          <p className="mt-3 max-w-xl text-white/60">
+            The message debate has ended. The AI judge is reading the written
+            transcript.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-neutral-950 via-neutral-900 to-black p-6 text-white">
+      <div className="mx-auto max-w-6xl">
+        <div className="text-center">
+          <div className="text-xs uppercase tracking-[0.35em] text-indigo-300">
+            AI Judge Result
+          </div>
+
+          <h3 className="mt-2 text-4xl font-black">
+            {stage === "counting"
+              ? "Scores are being revealed..."
+              : finalScore.tie
+                ? "It is a draw"
+                : `${winnerName} wins`}
+          </h3>
+
+          <p className="mt-2 text-white/60">
+            Scores are based on the written message transcript.
+          </p>
+
+          <div className="mt-3 text-xs text-white/40">
+            Source: {finalScore.source || "message_transcript"} · Transcript words:{" "}
+            {finalScore.transcriptWordCount || 0}
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-5 md:grid-cols-2">
+          <MessageScoreCard
+            label="Speaker A"
+            name={speakerAName}
+            score={speakerAScore}
+            animatedScore={animatedA}
+          />
+
+          <MessageScoreCard
+            label="Speaker B"
+            name={speakerBName}
+            score={speakerBScore}
+            animatedScore={animatedB}
+          />
+        </div>
+
+        {stage === "winner" || stage === "summary" ? (
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/10 p-6 text-center">
+            <div className="text-sm uppercase tracking-[0.25em] text-white/50">
+              Result
+            </div>
+
+            <div className="mt-2 text-5xl font-black">
+              {finalScore.tie ? "Draw" : winnerName}
+            </div>
+          </div>
+        ) : null}
+
+        {stage === "summary" ? (
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
+                <h4 className="text-lg font-bold text-green-200">
+                  {finalScore.tie
+                    ? "Why it was a draw"
+                    : "Why this result was chosen"}
+                </h4>
+
+                <p className="mt-2 text-sm leading-6 text-white/75">
+                  {explanation.winnerReason}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
+                <h4 className="text-lg font-bold text-red-200">
+                  What needs improving
+                </h4>
+
+                <p className="mt-2 text-sm leading-6 text-white/75">
+                  {explanation.loserReason}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <h4 className="text-2xl font-black">Judge breakdown</h4>
+
+              <p className="mt-1 text-sm text-white/50">
+                Each score is based only on what appears in the message
+                transcript.
+              </p>
+
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                <MessageSpeakerJudgeCard
+                  label="Speaker A"
+                  name={speakerAName}
+                  breakdown={speakerABreakdown}
+                />
+
+                <MessageSpeakerJudgeCard
+                  label="Speaker B"
+                  name={speakerBName}
+                  breakdown={speakerBBreakdown}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function DebateWorkspacePage() {
   const router = useRouter();
   const { debateId } = router.query;
@@ -212,7 +596,6 @@ export default function DebateWorkspacePage() {
   const [scorecard, setScorecard] = useState(null);
   const [showTranscript, setShowTranscript] = useState(false);
 
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [timerReady, setTimerReady] = useState(false);
 
@@ -445,17 +828,14 @@ export default function DebateWorkspacePage() {
       const startedAtMs = new Date(debate.startedAt).getTime();
 
       if (!Number.isFinite(startedAtMs)) {
-        setElapsedSeconds(0);
         setRemainingSeconds(totalSeconds);
         setTimerReady(true);
         return;
       }
 
       const diffSeconds = Math.floor((Date.now() - startedAtMs) / 1000);
-      const elapsed = Math.max(0, diffSeconds);
-      const remaining = Math.max(0, totalSeconds - elapsed);
+      const remaining = Math.max(0, totalSeconds - Math.max(0, diffSeconds));
 
-      setElapsedSeconds(elapsed);
       setRemainingSeconds(remaining);
       setTimerReady(true);
     }
@@ -712,17 +1092,17 @@ export default function DebateWorkspacePage() {
     }
   }
 
-async function onCreateLiveSession() {
-  try {
-    if (!isOwner) {
-      throw new Error("Only the debate owner can create the live session.");
-    }
+  async function onCreateLiveSession() {
+    try {
+      if (!isOwner) {
+        throw new Error("Only the debate owner can create the live session.");
+      }
 
-    if (isMessageDebate) {
-      throw new Error("Message debates do not use a video/voice session.");
-    }
+      if (isMessageDebate) {
+        throw new Error("Message debates do not use a video/voice session.");
+      }
 
-    await callApi(`/api/debates/${debateId}/live/session`, "POST");
+      await callApi(`/api/debates/${debateId}/live/session`, "POST");
 
       setNotice("Live session created.");
       await loadWorkspace();
@@ -858,8 +1238,8 @@ async function onCreateLiveSession() {
               Mode: {getModeLabel(debateMode)} · Rounds: {roundCount} · Closed:{" "}
               {closedRoundCount} · Live session: {hasLiveSession ? "yes" : "no"} ·
               Participants: {participants.length}/2 · Role:{" "}
-              {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} · Duration:{" "}
-              {estimatedDurationLabel} · Transcript segments:{" "}
+              {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·
+              Duration: {estimatedDurationLabel} · Transcript segments:{" "}
               {(workspace?.transcriptSegments || []).length}
             </div>
 
@@ -930,9 +1310,10 @@ async function onCreateLiveSession() {
 
               <div>
                 <h2 className="text-2xl font-semibold">Waiting for opponent...</h2>
+
                 <p className="mt-2 text-gray-600">
-                  Share the invite link and keep this page open. The debate will be ready once
-                  another user joins.
+                  Share the invite link and keep this page open. The debate will
+                  be ready once another user joins.
                 </p>
               </div>
 
@@ -944,9 +1325,13 @@ async function onCreateLiveSession() {
 
           {debate?.status === "scheduled" && hasTwoParticipants ? (
             <div className="rounded-xl border border-green-200 bg-green-50 p-5">
-              <h2 className="text-xl font-semibold text-green-800">Opponent joined</h2>
+              <h2 className="text-xl font-semibold text-green-800">
+                Opponent joined
+              </h2>
+
               <p className="mt-1 text-green-700">
-                Both participants are now in the debate. The host can start the debate.
+                Both participants are now in the debate. The host can start the
+                debate.
               </p>
             </div>
           ) : null}
@@ -954,24 +1339,35 @@ async function onCreateLiveSession() {
           {!isOwner && isVideoVoiceDebate && !liveRoomUrl ? (
             <div className="rounded-xl border p-5 text-center">
               <h2 className="text-xl font-semibold">Waiting for host to start video</h2>
+
               <p className="mt-2 text-gray-600">
-                You have joined the debate. The video room will appear here once the host creates
-                the live session.
+                You have joined the debate. The video room will appear here once
+                the host creates the live session.
               </p>
             </div>
           ) : null}
 
           {isMessageDebate ? (
-            <MessageDebatePanel
-              debate={debate}
-              transcriptSegments={workspace?.transcriptSegments || []}
-              speakerAName={speakerAName}
-              speakerBName={speakerBName}
-              timerText={formatTimer(remainingSeconds)}
-              busy={busy}
-              isParticipant={isParticipant}
-              onSendMessage={sendMessageDebateMessage}
-            />
+            <div className="space-y-5">
+              {shouldShowResultGraphic ? (
+                <MessageResultGraphic
+                  finalScore={debate?.finalScore}
+                  speakerAName={speakerAName}
+                  speakerBName={speakerBName}
+                />
+              ) : null}
+
+              <MessageDebatePanel
+                debate={debate}
+                transcriptSegments={workspace?.transcriptSegments || []}
+                speakerAName={speakerAName}
+                speakerBName={speakerBName}
+                timerText={formatTimer(remainingSeconds)}
+                busy={busy}
+                isParticipant={isParticipant}
+                onSendMessage={sendMessageDebateMessage}
+              />
+            </div>
           ) : null}
 
           {isVideoVoiceDebate && liveRoomUrl ? (
@@ -1003,8 +1399,8 @@ async function onCreateLiveSession() {
                 </div>
               ) : (
                 <p className="text-gray-600">
-                  The debate has ended. The host should click Compute final score to generate the
-                  transcript-based result.
+                  The debate has ended. The host should click Compute final score
+                  to generate the transcript-based result.
                 </p>
               )}
 
@@ -1034,6 +1430,7 @@ async function onCreateLiveSession() {
                             <div className="text-sm font-medium text-gray-800">
                               {name}
                             </div>
+
                             <div className="text-sm text-gray-600">
                               {segment.text}
                             </div>
@@ -1043,8 +1440,9 @@ async function onCreateLiveSession() {
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-gray-600">
-                      No transcript was captured for this debate. This usually means no messages
-                      were sent or Daily transcription did not start.
+                      No transcript was captured for this debate. This usually
+                      means no messages were sent or Daily transcription did not
+                      start.
                     </p>
                   )}
                 </div>
