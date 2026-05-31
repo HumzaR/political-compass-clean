@@ -92,6 +92,9 @@ function MessageDebatePanel({
   currentRoundLabel,
   busy,
   isParticipant,
+  isOwner,
+  endingDebate,
+  onEndDebate,
   onSendMessage,
 }) {
   const [message, setMessage] = useState("");
@@ -148,14 +151,25 @@ function MessageDebatePanel({
           </div>
 
           <div className="text-right">
-            <div className="text-xs uppercase tracking-[0.2em] text-white/50">
-              Countdown
-            </div>
+  <div className="text-xs uppercase tracking-[0.2em] text-white/50">
+    Countdown
+  </div>
 
-            <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
-              {debate?.status === "live" ? timerText : "00:00"}
-            </div>
-          </div>
+  <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
+    {debate?.status === "live" ? timerText : "00:00"}
+  </div>
+
+  {isOwner && debate?.status === "live" ? (
+    <button
+      type="button"
+      onClick={onEndDebate}
+      disabled={endingDebate}
+      className="mt-3 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+    >
+      {endingDebate ? "Ending..." : "End debate"}
+    </button>
+  ) : null}
+</div>
         </div>
       </div>
 
@@ -1171,10 +1185,20 @@ export default function DebateWorkspacePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-5">
-      <div>
-        <h1 className="text-3xl font-semibold">Debate Workspace</h1>
-        <p className="text-gray-600">Debate ID: {debateId}</p>
-      </div>
+      <div className="flex items-start justify-between gap-4">
+  <div>
+    <h1 className="text-3xl font-semibold">Debate Workspace</h1>
+    <p className="text-gray-600">Debate ID: {debateId}</p>
+  </div>
+
+  <button
+    disabled={busy}
+    onClick={copyInviteLink}
+    className="rounded border px-4 py-2 disabled:opacity-50"
+  >
+    Copy invite link
+  </button>
+</div>
 
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">
@@ -1192,62 +1216,6 @@ export default function DebateWorkspacePage() {
         <div className="text-gray-500">Loading workspace...</div>
       ) : (
         <>
-          <div className="rounded-xl border p-4">
-            <div className="font-medium">Status: {debate?.status}</div>
-
-            <div className="text-sm text-gray-600 mt-1">
-              Mode: {getModeLabel(debateMode)} · Rounds: {roundCount} · Active:{" "}
-              {currentRoundLabel} · Closed: {closedRoundCount} · Live session:{" "}
-              {hasLiveSession ? "yes" : "no"} · Participants:{" "}
-              {participants.length}/2 · Role:{" "}
-              {isOwner ? "Host" : isParticipant ? "Participant" : "Viewer"} ·
-              Duration: {estimatedDurationLabel} · Transcript segments:{" "}
-              {(workspace?.transcriptSegments || []).length}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                disabled={busy}
-                onClick={copyInviteLink}
-                className="rounded border px-3 py-2 disabled:opacity-50"
-              >
-                Copy invite link
-              </button>
-
-              {isOwner ? (
-                <>
-                  <button
-                    disabled={busy || debate?.status !== "live"}
-                    onClick={onEnd}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    End debate
-                  </button>
-
-                  <button
-                    disabled={busy || debate?.status !== "ended"}
-                    onClick={onComputeFinal}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    Compute final score
-                  </button>
-
-                  <button
-                    disabled={busy}
-                    onClick={onLoadScorecard}
-                    className="rounded border px-3 py-2 disabled:opacity-50"
-                  >
-                    Load scorecard
-                  </button>
-                </>
-              ) : (
-                <div className="rounded border px-3 py-2 text-sm text-gray-600">
-                  Waiting for host controls
-                </div>
-              )}
-            </div>
-          </div>
-
           {isWaitingForOpponent ? (
             <div className="rounded-xl border p-8 text-center space-y-4">
               <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-indigo-600" />
@@ -1318,35 +1286,40 @@ export default function DebateWorkspacePage() {
               ) : null}
 
               <MessageDebatePanel
-                debate={debate}
-                transcriptSegments={workspace?.transcriptSegments || []}
-                speakerAName={speakerAName}
-                speakerBName={speakerBName}
-                timerText={formatTimer(remainingSeconds)}
-                currentRoundLabel={currentRoundLabel}
-                busy={busy}
-                isParticipant={isParticipant}
-                onSendMessage={sendMessageDebateMessage}
-              />
+  debate={debate}
+  transcriptSegments={workspace?.transcriptSegments || []}
+  speakerAName={speakerAName}
+  speakerBName={speakerBName}
+  timerText={formatTimer(remainingSeconds)}
+  currentRoundLabel={currentRoundLabel}
+  busy={busy}
+  isParticipant={isParticipant}
+  isOwner={isOwner}
+  endingDebate={busy}
+  onEndDebate={onEnd}
+  onSendMessage={sendMessageDebateMessage}
+/>
             </div>
           ) : null}
 
           {isVideoVoiceDebate && liveRoomUrl ? (
             <CustomDailyCall
-              roomUrl={liveRoomUrl}
-              token={liveToken}
-              userName={user?.displayName || user?.email || "Debater"}
-              debateTitle={debate?.title || "Untitled debate"}
-              debateStatus={debate?.status}
-              timerText={formatTimer(remainingSeconds)}
-              currentRoundLabel={currentRoundLabel}
-              speakerAName={speakerAName}
-              speakerBName={speakerBName}
-              showResultGraphic={shouldShowResultGraphic}
-              finalScore={debate?.finalScore}
-              isOwner={isOwner}
-              onTranscriptSegment={saveDailyTranscriptSegment}
-            />
+  roomUrl={liveRoomUrl}
+  token={liveToken}
+  userName={user?.displayName || user?.email || "Debater"}
+  debateTitle={debate?.title || "Untitled debate"}
+  debateStatus={debate?.status}
+  timerText={formatTimer(remainingSeconds)}
+  currentRoundLabel={currentRoundLabel}
+  speakerAName={speakerAName}
+  speakerBName={speakerBName}
+  showResultGraphic={shouldShowResultGraphic}
+  finalScore={debate?.finalScore}
+  isOwner={isOwner}
+  endingDebate={busy}
+  onEndDebate={onEnd}
+  onTranscriptSegment={saveDailyTranscriptSegment}
+/>
           ) : null}
 
           {debate?.status === "ended" ? (

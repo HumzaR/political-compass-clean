@@ -183,7 +183,7 @@ function EmptyTile({ label }) {
   );
 }
 
-function CallControls({ joined }) {
+function CallControls({ joined, isOwner, endingDebate, onEndDebate }) {
   const callObject = useDaily();
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
@@ -206,7 +206,14 @@ function CallControls({ joined }) {
 
   function leaveCall() {
     if (!callObject) return;
-    callObject.leave();
+
+    try {
+      const result = callObject.leave();
+
+      if (result && typeof result.catch === "function") {
+        result.catch(() => null);
+      }
+    } catch {}
   }
 
   if (!joined) return null;
@@ -227,12 +234,22 @@ function CallControls({ joined }) {
         {cameraOn ? "Turn camera off" : "Turn camera on"}
       </button>
 
-      <button
-        onClick={leaveCall}
-        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-      >
-        Leave call
-      </button>
+      {isOwner ? (
+        <button
+          onClick={onEndDebate}
+          disabled={endingDebate}
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {endingDebate ? "Ending debate..." : "End debate"}
+        </button>
+      ) : (
+        <button
+          onClick={leaveCall}
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          Leave call
+        </button>
+      )}
     </div>
   );
 }
@@ -612,6 +629,8 @@ function CustomDailyCallInner({
   showResultGraphic,
   finalScore,
   isOwner,
+  endingDebate,
+  onEndDebate,
   onTranscriptSegment,
 }) {
   const callObject = useDaily();
@@ -877,7 +896,12 @@ function CustomDailyCallInner({
 
       <DailyAudio />
 
-      <CallControls joined={joined && !showResultGraphic} />
+      <CallControls
+  joined={joined && !showResultGraphic}
+  isOwner={isOwner}
+  endingDebate={endingDebate}
+  onEndDebate={onEndDebate}
+/>
     </div>
   );
 }
