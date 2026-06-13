@@ -1,13 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Copy,
+  Gavel,
+  Loader2,
+  MessageSquare,
+  Mic,
+  Play,
+  Radio,
+  Send,
+  Trophy,
+  Users,
+} from "lucide-react";
 
 const CustomDailyCall = dynamic(
   () => import("@/components/debates/CustomDailyCall"),
   { ssr: false }
 );
+
+const MESSAGE_DIMENSION_LABELS = {
+  argumentQuality: "Argument quality",
+  factualAccuracy: "Evidence usage",
+  rebuttalEffectiveness: "Rebuttal effectiveness",
+  rhetoricDelivery: "Delivery and rhetoric",
+  topicConsistency: "Topic consistency",
+};
 
 async function getAuthHeaders() {
   const user = auth.currentUser;
@@ -49,26 +73,26 @@ function getDebateDurationSeconds(format, durationMinutes) {
 
 function getModeLabel(debateMode) {
   if (debateMode === "message") {
-    return "Message";
+    return "Text";
   }
 
-  return "Video/voice";
+  return "Voice";
 }
 
 function getLengthLabel(format, durationMinutes) {
   if (format === "custom") {
-    return `${durationMinutes || 10} min estimated`;
+    return `${durationMinutes || 10} min`;
   }
 
   if (format === "long") {
-    return "45 min estimated";
+    return "45 min";
   }
 
   if (format === "medium") {
-    return "20 min estimated";
+    return "20 min";
   }
 
-  return "5 min estimated";
+  return "5 min";
 }
 
 function getRoundDisplay(round) {
@@ -83,182 +107,96 @@ function getRoundDisplay(round) {
   return `Round ${round.roundNumber}`;
 }
 
-function MessageDebatePanel({
-  debate,
-  transcriptSegments,
-  speakerAName,
-  speakerBName,
-  timerText,
-  currentRoundLabel,
-  busy,
-  isParticipant,
-  isOwner,
-  endingDebate,
-  onEndDebate,
-  onSendMessage,
-}) {
-  const [message, setMessage] = useState("");
+function Label({ children }) {
+  return (
+    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+      {children}
+    </span>
+  );
+}
 
-  const sortedSegments = useMemo(() => {
-    return [...(transcriptSegments || [])].sort(
-      (a, b) => Number(a.startMs || 0) - Number(b.startMs || 0)
+function StatusChip({ status }) {
+  if (status === "live") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-primary-foreground">
+        <Radio className="h-3 w-3" />
+        Live
+      </span>
     );
-  }, [transcriptSegments]);
+  }
 
-  async function submitMessage(e) {
-    e.preventDefault();
-
-    const text = message.trim();
-
-    if (!text) {
-      return;
-    }
-
-    await onSendMessage(text);
-    setMessage("");
+  if (status === "ended") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+        Ended
+      </span>
+    );
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-      <div className="border-b bg-neutral-950 p-4 text-white">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-indigo-300">
-              Message Debate
-            </div>
+    <span className="inline-flex items-center rounded-full bg-lime-200 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-lime-900">
+      Waiting
+    </span>
+  );
+}
 
-            <h2 className="mt-1 text-2xl font-bold">
-              {debate?.title || "Untitled debate"}
-            </h2>
+function Notice({ type = "info", children }) {
+  const className =
+    type === "error"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : type === "success"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-hairline bg-surface-2 text-muted-foreground";
 
-            <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
-              <span className="rounded-full bg-white/10 px-3 py-1">
-                {speakerAName} vs {speakerBName}
-              </span>
-
-              <span className="rounded-full bg-white/10 px-3 py-1">
-                {currentRoundLabel}
-              </span>
-
-              <span className="rounded-full bg-white/10 px-3 py-1">
-                Status: {debate?.status}
-              </span>
-
-              <span className="rounded-full bg-white/10 px-3 py-1">
-                Messages: {sortedSegments.length}
-              </span>
-            </div>
-          </div>
-
-          <div className="text-right">
-  <div className="text-xs uppercase tracking-[0.2em] text-white/50">
-    Countdown
-  </div>
-
-  <div className="mt-1 rounded-xl bg-white px-5 py-2 font-mono text-4xl font-bold text-neutral-950">
-    {debate?.status === "live" ? timerText : "00:00"}
-  </div>
-
-  {isOwner && debate?.status === "live" ? (
-    <button
-      type="button"
-      onClick={onEndDebate}
-      disabled={endingDebate}
-      className="mt-3 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-    >
-      {endingDebate ? "Ending..." : "End debate"}
-    </button>
-  ) : null}
-</div>
-        </div>
-      </div>
-
-      <div className="max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto bg-gray-50 p-4">
-        {sortedSegments.length ? (
-          sortedSegments.map((segment) => {
-            const isSpeakerA = segment.speakerUserId === "speakerA";
-            const name = isSpeakerA ? speakerAName : speakerBName;
-
-            return (
-              <div
-                key={segment.id || `${segment.startMs}-${segment.text}`}
-                className={`flex ${isSpeakerA ? "justify-start" : "justify-end"}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    isSpeakerA
-                      ? "bg-white text-gray-900"
-                      : "bg-indigo-600 text-white"
-                  }`}
-                >
-                  <div
-                    className={`mb-1 text-xs font-semibold ${
-                      isSpeakerA ? "text-gray-500" : "text-indigo-100"
-                    }`}
-                  >
-                    {name}
-                  </div>
-
-                  <div className="whitespace-pre-wrap text-sm leading-6">
-                    {segment.text}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="flex h-[320px] items-center justify-center text-center text-gray-500">
-            <div>
-              <div className="text-lg font-medium">No messages yet</div>
-
-              <p className="mt-1 text-sm">
-                Start the debate, then both participants can send messages.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <form onSubmit={submitMessage} className="border-t bg-white p-4">
-        {debate?.status !== "live" ? (
-          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
-            Messages can only be sent while the debate is live.
-          </div>
-        ) : !isParticipant ? (
-          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
-            Only the two debate participants can send messages.
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            <textarea
-              className="min-h-[56px] flex-1 rounded-xl border p-3"
-              placeholder="Write your argument..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              disabled={busy}
-            />
-
-            <button
-              type="submit"
-              disabled={busy || !message.trim()}
-              className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
-        )}
-      </form>
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${className}`}>
+      {children}
     </div>
   );
 }
 
-const MESSAGE_DIMENSION_LABELS = {
-  argumentQuality: "Argument quality",
-  factualAccuracy: "Evidence usage",
-  rebuttalEffectiveness: "Rebuttal effectiveness",
-  rhetoricDelivery: "Delivery and rhetoric",
-  topicConsistency: "Topic consistency",
-};
+function MetricCard({ icon, label, value }) {
+  return (
+    <div className="rounded-xl border border-hairline bg-surface-2 p-3">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
+          {label}
+        </span>
+      </div>
+
+      <div className="mt-1 font-display text-lg font-bold text-foreground">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ParticipantCard({ label, participant, fallbackName }) {
+  return (
+    <div className="rounded-xl border border-hairline bg-surface-2 p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </div>
+
+      <div className="mt-2 flex items-center gap-3">
+        <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 font-display text-sm font-bold text-primary">
+          {(participant?.displayName || fallbackName || "?").slice(0, 1).toUpperCase()}
+        </div>
+
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-foreground">
+            {participant?.displayName || fallbackName}
+          </div>
+
+          <div className="text-xs font-medium text-muted-foreground">
+            {participant ? "Joined" : "Waiting"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function getMessageScoreForSpeaker(finalScore, speakerId) {
   const item = finalScore?.leaderboard?.find(
@@ -280,25 +218,27 @@ function getMessageSpeakerName(speakerId, speakerAName, speakerBName) {
 
 function MessageScoreCard({ label, name, score, animatedScore }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-      <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+    <div className="rounded-xl border border-hairline bg-surface p-4">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {label}
       </div>
 
-      <div className="mt-2 text-xl font-bold">{name}</div>
+      <div className="mt-1 font-display text-lg font-bold">{name}</div>
 
-      <div className="mt-6 font-mono text-6xl font-black">
+      <div className="mt-5 font-mono text-4xl font-semibold">
         {animatedScore.toFixed(1)}
       </div>
 
-      <div className="mt-4 h-4 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-white transition-all duration-200"
+          className="h-full rounded-full bg-primary transition-all duration-200"
           style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
         />
       </div>
 
-      <div className="mt-2 text-sm text-white/50">Final score out of 100</div>
+      <div className="mt-2 text-xs font-medium text-muted-foreground">
+        Final score out of 100
+      </div>
     </div>
   );
 }
@@ -316,14 +256,14 @@ function MessageDimensionBars({ dimensions }) {
 
         return (
           <div key={key}>
-            <div className="flex justify-between text-xs text-white/60">
+            <div className="flex justify-between text-xs font-medium text-muted-foreground">
               <span>{label}</span>
               <span>{value.toFixed(1)}</span>
             </div>
 
-            <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10">
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-white/80"
+                className="h-full rounded-full bg-primary"
                 style={{ width: `${value}%` }}
               />
             </div>
@@ -338,17 +278,17 @@ function MessageTextList({ title, items, emptyText }) {
   const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
 
   return (
-    <div className="rounded-xl bg-white/5 p-4">
-      <h5 className="text-sm font-bold text-white">{title}</h5>
+    <div className="rounded-xl bg-surface-2 p-3">
+      <h5 className="text-sm font-semibold text-foreground">{title}</h5>
 
       {safeItems.length ? (
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-white/70">
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
           {safeItems.slice(0, 4).map((item, index) => (
             <li key={`${title}-${index}`}>{item}</li>
           ))}
         </ul>
       ) : (
-        <p className="mt-2 text-sm text-white/45">{emptyText}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{emptyText}</p>
       )}
     </div>
   );
@@ -358,22 +298,24 @@ function MessageEvidenceQuotes({ quotes }) {
   const safeQuotes = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
 
   return (
-    <div className="rounded-xl bg-white/5 p-4">
-      <h5 className="text-sm font-bold text-white">Evidence from messages</h5>
+    <div className="rounded-xl bg-surface-2 p-3">
+      <h5 className="text-sm font-semibold text-foreground">
+        Evidence from messages
+      </h5>
 
       {safeQuotes.length ? (
         <div className="mt-3 space-y-2">
           {safeQuotes.slice(0, 3).map((quote, index) => (
             <blockquote
               key={`message-quote-${index}`}
-              className="border-l-2 border-indigo-300 pl-3 text-sm leading-6 text-white/70"
+              className="border-l-2 border-primary/50 pl-3 text-sm leading-6 text-muted-foreground"
             >
               “{quote}”
             </blockquote>
           ))}
         </div>
       ) : (
-        <p className="mt-2 text-sm text-white/45">
+        <p className="mt-2 text-sm text-muted-foreground">
           No specific message quotes were returned by the judge.
         </p>
       )}
@@ -385,29 +327,29 @@ function MessageSpeakerJudgeCard({ label, name, breakdown }) {
   const score = Number(breakdown?.score || 0);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
+    <div className="rounded-xl border border-hairline bg-surface p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.25em] text-white/40">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {label}
           </div>
 
-          <h4 className="mt-1 text-2xl font-black">{name}</h4>
+          <h4 className="mt-1 font-display text-xl font-bold">{name}</h4>
 
-          <p className="mt-2 text-sm leading-6 text-white/60">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {breakdown?.summary || "No judging summary available."}
           </p>
         </div>
 
-        <div className="rounded-xl bg-white px-4 py-2 text-right text-neutral-950">
-          <div className="text-xs font-semibold uppercase">Score</div>
-          <div className="text-2xl font-black">{score.toFixed(1)}</div>
+        <div className="rounded-xl bg-primary px-3 py-2 text-right text-primary-foreground">
+          <div className="text-[10px] font-semibold uppercase">Score</div>
+          <div className="font-display text-xl font-bold">{score.toFixed(1)}</div>
         </div>
       </div>
 
       <MessageDimensionBars dimensions={breakdown?.dimensions} />
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-3">
         <MessageTextList
           title="Strengths"
           items={breakdown?.strengths}
@@ -511,15 +453,16 @@ function MessageResultGraphic({ finalScore, speakerAName, speakerBName }) {
 
   if (!finalScore) {
     return (
-      <div className="flex min-h-[420px] items-center justify-center rounded-2xl bg-neutral-950 p-8 text-white">
-        <div className="text-center">
-          <div className="mx-auto h-14 w-14 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+      <div className="surface-card flex min-h-[360px] items-center justify-center rounded-2xl p-8 text-center">
+        <div>
+          <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
 
-          <h3 className="mt-6 text-3xl font-black">Calculating result...</h3>
+          <h3 className="mt-5 font-display text-3xl font-bold">
+            Calculating result...
+          </h3>
 
-          <p className="mt-3 max-w-xl text-white/60">
-            The message debate has ended. The AI judge is reading the written
-            transcript.
+          <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-muted-foreground">
+            The debate has ended. The AI judge is reading the transcript.
           </p>
         </div>
       </div>
@@ -527,110 +470,271 @@ function MessageResultGraphic({ finalScore, speakerAName, speakerBName }) {
   }
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-neutral-950 via-neutral-900 to-black p-6 text-white">
-      <div className="mx-auto max-w-6xl">
-        <div className="text-center">
-          <div className="text-xs uppercase tracking-[0.35em] text-indigo-300">
-            AI Judge Result
-          </div>
-
-          <h3 className="mt-2 text-4xl font-black">
-            {stage === "counting"
-              ? "Scores are being revealed..."
-              : finalScore.tie
-                ? "It is a draw"
-                : `${winnerName} wins`}
-          </h3>
-
-          <p className="mt-2 text-white/60">
-            Scores are based on the written message transcript.
-          </p>
-
-          <div className="mt-3 text-xs text-white/40">
-            Source: {finalScore.source || "message_transcript"} · Transcript words:{" "}
-            {finalScore.transcriptWordCount || 0}
-          </div>
+    <div className="surface-card rounded-2xl p-5 lg:p-7">
+      <div className="text-center">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+          AI Judge Result
         </div>
 
-        <div className="mt-8 grid gap-5 md:grid-cols-2">
-          <MessageScoreCard
-            label="Speaker A"
-            name={speakerAName}
-            score={speakerAScore}
-            animatedScore={animatedA}
-          />
+        <h3 className="mt-1 font-display text-4xl font-bold leading-[1] tracking-tight lg:text-5xl">
+          {stage === "counting"
+            ? "Revealing scores..."
+            : finalScore.tie
+              ? "It is a draw"
+              : `${winnerName} wins`}
+        </h3>
 
-          <MessageScoreCard
-            label="Speaker B"
-            name={speakerBName}
-            score={speakerBScore}
-            animatedScore={animatedB}
-          />
+        <p className="mt-2 text-sm font-medium text-muted-foreground">
+          Scores are based on the captured transcript.
+        </p>
+
+        <div className="mt-2 text-xs font-medium text-muted-foreground">
+          Transcript words: {finalScore.transcriptWordCount || 0}
         </div>
-
-        {stage === "winner" || stage === "summary" ? (
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/10 p-6 text-center">
-            <div className="text-sm uppercase tracking-[0.25em] text-white/50">
-              Result
-            </div>
-
-            <div className="mt-2 text-5xl font-black">
-              {finalScore.tie ? "Draw" : winnerName}
-            </div>
-          </div>
-        ) : null}
-
-        {stage === "summary" ? (
-          <>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-green-400/20 bg-green-400/10 p-5">
-                <h4 className="text-lg font-bold text-green-200">
-                  {finalScore.tie
-                    ? "Why it was a draw"
-                    : "Why this result was chosen"}
-                </h4>
-
-                <p className="mt-2 text-sm leading-6 text-white/75">
-                  {explanation.winnerReason}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-5">
-                <h4 className="text-lg font-bold text-red-200">
-                  What needs improving
-                </h4>
-
-                <p className="mt-2 text-sm leading-6 text-white/75">
-                  {explanation.loserReason}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <h4 className="text-2xl font-black">Judge breakdown</h4>
-
-              <p className="mt-1 text-sm text-white/50">
-                Each score is based only on what appears in the message
-                transcript.
-              </p>
-
-              <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                <MessageSpeakerJudgeCard
-                  label="Speaker A"
-                  name={speakerAName}
-                  breakdown={speakerABreakdown}
-                />
-
-                <MessageSpeakerJudgeCard
-                  label="Speaker B"
-                  name={speakerBName}
-                  breakdown={speakerBBreakdown}
-                />
-              </div>
-            </div>
-          </>
-        ) : null}
       </div>
+
+      <div className="mt-6 grid gap-3 md:grid-cols-2">
+        <MessageScoreCard
+          label="Speaker A"
+          name={speakerAName}
+          score={speakerAScore}
+          animatedScore={animatedA}
+        />
+
+        <MessageScoreCard
+          label="Speaker B"
+          name={speakerBName}
+          score={speakerBScore}
+          animatedScore={animatedB}
+        />
+      </div>
+
+      {stage === "winner" || stage === "summary" ? (
+        <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-5 text-center">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+            Result
+          </div>
+
+          <div className="mt-1 font-display text-4xl font-bold">
+            {finalScore.tie ? "Draw" : winnerName}
+          </div>
+        </div>
+      ) : null}
+
+      {stage === "summary" ? (
+        <>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <h4 className="text-sm font-semibold text-emerald-800">
+                {finalScore.tie ? "Why it was a draw" : "Why this result was chosen"}
+              </h4>
+
+              <p className="mt-2 text-sm leading-6 text-emerald-900/75">
+                {explanation.winnerReason}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+              <h4 className="text-sm font-semibold text-red-800">
+                What needs improving
+              </h4>
+
+              <p className="mt-2 text-sm leading-6 text-red-900/75">
+                {explanation.loserReason}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h4 className="font-display text-xl font-bold">Judge breakdown</h4>
+
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
+              Each score is based only on what appears in the transcript.
+            </p>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <MessageSpeakerJudgeCard
+                label="Speaker A"
+                name={speakerAName}
+                breakdown={speakerABreakdown}
+              />
+
+              <MessageSpeakerJudgeCard
+                label="Speaker B"
+                name={speakerBName}
+                breakdown={speakerBBreakdown}
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function MessageDebatePanel({
+  debate,
+  transcriptSegments,
+  speakerAName,
+  speakerBName,
+  timerText,
+  currentRoundLabel,
+  busy,
+  isParticipant,
+  isOwner,
+  endingDebate,
+  onEndDebate,
+  onSendMessage,
+}) {
+  const [message, setMessage] = useState("");
+
+  const sortedSegments = useMemo(() => {
+    return [...(transcriptSegments || [])].sort(
+      (a, b) => Number(a.startMs || 0) - Number(b.startMs || 0)
+    );
+  }, [transcriptSegments]);
+
+  async function submitMessage(e) {
+    e.preventDefault();
+
+    const text = message.trim();
+
+    if (!text) {
+      return;
+    }
+
+    await onSendMessage(text);
+    setMessage("");
+  }
+
+  return (
+    <div className="surface-card overflow-hidden rounded-2xl">
+      <div className="border-b border-hairline p-4 lg:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Text Debate
+            </div>
+
+            <h2 className="mt-1 font-display text-2xl font-bold">
+              {debate?.title || "Untitled debate"}
+            </h2>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                {speakerAName} vs {speakerBName}
+              </span>
+
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                {currentRoundLabel}
+              </span>
+
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                Messages: {sortedSegments.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <Label>Countdown</Label>
+
+            <div className="mt-1 rounded-xl bg-slate-950 px-4 py-2 font-mono text-2xl font-semibold text-white">
+              {debate?.status === "live" ? timerText : "00:00"}
+            </div>
+
+            {isOwner && debate?.status === "live" ? (
+              <button
+                type="button"
+                onClick={onEndDebate}
+                disabled={endingDebate}
+                className="focus-ring mt-3 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                {endingDebate ? "Ending..." : "End debate"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-h-[520px] min-h-[360px] space-y-3 overflow-y-auto bg-surface-2 p-4">
+        {sortedSegments.length ? (
+          sortedSegments.map((segment) => {
+            const isSpeakerA = segment.speakerUserId === "speakerA";
+            const name = isSpeakerA ? speakerAName : speakerBName;
+
+            return (
+              <div
+                key={segment.id || `${segment.startMs}-${segment.text}`}
+                className={`flex ${isSpeakerA ? "justify-start" : "justify-end"}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    isSpeakerA
+                      ? "border border-hairline bg-surface text-foreground"
+                      : "bg-primary text-primary-foreground"
+                  }`}
+                >
+                  <div
+                    className={`mb-1 text-xs font-semibold ${
+                      isSpeakerA
+                        ? "text-muted-foreground"
+                        : "text-primary-foreground/75"
+                    }`}
+                  >
+                    {name}
+                  </div>
+
+                  <div className="whitespace-pre-wrap text-sm leading-6">
+                    {segment.text}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="flex h-[320px] items-center justify-center text-center">
+            <div>
+              <div className="font-display text-lg font-bold">No messages yet</div>
+
+              <p className="mt-1 text-sm font-medium text-muted-foreground">
+                Start the debate, then both participants can send messages.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={submitMessage} className="border-t border-hairline p-4">
+        {debate?.status !== "live" ? (
+          <div className="rounded-xl bg-muted p-3 text-sm font-medium text-muted-foreground">
+            Messages can only be sent while the debate is live.
+          </div>
+        ) : !isParticipant ? (
+          <div className="rounded-xl bg-muted p-3 text-sm font-medium text-muted-foreground">
+            Only the two debate participants can send messages.
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <textarea
+              className="focus-ring min-h-[56px] flex-1 resize-none rounded-xl border border-hairline bg-surface-2 p-3 text-sm"
+              placeholder="Write your argument..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              disabled={busy}
+            />
+
+            <button
+              type="submit"
+              disabled={busy || !message.trim()}
+              className="focus-ring inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:-translate-y-0.5 disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              Send
+            </button>
+          </div>
+        )}
+      </form>
     </div>
   );
 }
@@ -644,9 +748,9 @@ export default function DebateWorkspacePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const [workspace, setWorkspace] = useState(null);
-  const [scorecard, setScorecard] = useState(null);
   const [showTranscript, setShowTranscript] = useState(false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -916,10 +1020,6 @@ export default function DebateWorkspacePage() {
       }
 
       setWorkspace(body);
-
-      if (!silent) {
-        setScorecard(null);
-      }
     } catch (e) {
       setError(e.message || "Failed to load workspace");
     } finally {
@@ -1086,7 +1186,12 @@ export default function DebateWorkspacePage() {
       }
 
       await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
       setNotice("Invite link copied.");
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 2500);
     } catch (e) {
       setError(e.message || "Could not copy invite link.");
     }
@@ -1153,248 +1258,409 @@ export default function DebateWorkspacePage() {
     }
   }
 
-  async function onLoadScorecard() {
-    try {
-      const res = await fetch(`/api/debates/${debateId}/scorecard`, {
-        headers: await getAuthHeaders(),
-      });
-
-      const body = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(body?.error || "Failed to load scorecard");
-      }
-
-      setScorecard(body);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
-
   if (user === undefined) {
     return null;
   }
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
-        Please sign in to access debate workspace.
+      <div className="min-h-screen w-full p-3 lg:p-4">
+        <div className="surface-card mx-auto flex min-h-[calc(100vh-2rem)] max-w-3xl flex-col justify-center rounded-2xl p-5 lg:p-7">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <Gavel className="h-5 w-5" />
+          </div>
+
+          <div className="mt-5 text-center">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+              Debate Workspace
+            </div>
+
+            <h1 className="mt-1 font-display text-4xl font-bold leading-[1] tracking-tight lg:text-5xl">
+              Sign in first
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-md text-sm font-medium text-muted-foreground">
+              Please sign in to access this debate workspace.
+            </p>
+
+            <button
+              onClick={() => router.push("/login")}
+              className="focus-ring mt-6 inline-flex items-center justify-center rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-primary hover:shadow-[0_18px_40px_-12px_var(--primary)]"
+            >
+              Go to login
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-5">
-      <div className="flex items-start justify-between gap-4">
-  <div>
-    <h1 className="text-3xl font-semibold">Debate Workspace</h1>
-    <p className="text-gray-600">Debate ID: {debateId}</p>
-  </div>
-
-  <button
-    disabled={busy}
-    onClick={copyInviteLink}
-    className="rounded border px-4 py-2 disabled:opacity-50"
-  >
-    Copy invite link
-  </button>
-</div>
-
-      {error ? (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      {notice ? (
-        <div className="rounded border border-green-200 bg-green-50 p-3 text-green-700">
-          {notice}
-        </div>
-      ) : null}
-
-      {loading ? (
-        <div className="text-gray-500">Loading workspace...</div>
-      ) : (
-        <>
-          {isWaitingForOpponent ? (
-            <div className="rounded-xl border p-8 text-center space-y-4">
-              <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-indigo-600" />
-
+    <div className="min-h-screen w-full p-3 lg:p-4">
+      <div className="grid min-h-[calc(100vh-2rem)] w-full grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-4">
+        <main className="flex min-h-0 flex-col gap-3">
+          <section className="surface-card rounded-2xl p-5 lg:p-7">
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold">Waiting for opponent...</h2>
-
-                <p className="mt-2 text-gray-600">
-                  Share the invite link and keep this page open. The debate will
-                  be ready once another user joins.
-                </p>
-              </div>
-
-              <div className="text-sm text-gray-500">
-                Participants joined: {participants.length}/2
-              </div>
-            </div>
-          ) : null}
-
-          {debate?.status === "scheduled" && hasTwoParticipants ? (
-            <div className="rounded-xl border border-green-200 bg-green-50 p-5">
-              <h2 className="text-xl font-semibold text-green-800">
-                Opponent joined
-              </h2>
-
-              <p className="mt-1 text-green-700">
-                Both participants are now in the debate. The host can start the
-                debate.
-              </p>
-
-              {isOwner ? (
-                <button
-                  disabled={busy || !canStartDebate}
-                  onClick={onStart}
-                  className="mt-4 rounded border bg-white px-4 py-2 font-medium text-green-800 disabled:opacity-50"
+                <Link
+                  href="/debates"
+                  className="mb-4 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
                 >
-                  Start debate
-                </button>
-              ) : (
-                <p className="mt-4 text-sm text-green-700">
-                  Waiting for the host to start the debate.
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to Arena
+                </Link>
+
+                <div className="flex items-center gap-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+                    Debate Workspace
+                  </div>
+                  <StatusChip status={debate?.status} />
+                </div>
+
+                <h1 className="mt-1 font-display text-4xl font-bold leading-[1] tracking-tight lg:text-5xl">
+                  {debate?.title || "Loading debate..."}
+                </h1>
+
+                <p className="mt-2 text-sm font-medium text-muted-foreground">
+                  {currentRoundLabel} · {getModeLabel(debateMode)} ·{" "}
+                  {estimatedDurationLabel}
                 </p>
-              )}
+              </div>
+
+              <button
+                disabled={busy}
+                onClick={copyInviteLink}
+                className="focus-ring inline-flex items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-semibold text-foreground transition-all hover:bg-slate-200 disabled:opacity-50"
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy invite"}
+              </button>
             </div>
-          ) : null}
 
-          {!isOwner && isVideoVoiceDebate && !liveRoomUrl ? (
-            <div className="rounded-xl border p-5 text-center">
-              <h2 className="text-xl font-semibold">
-                Waiting for host to start video
-              </h2>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard
+                icon={<Users className="h-3.5 w-3.5" />}
+                label="Participants"
+                value={`${participants.length}/2`}
+              />
 
-              <p className="mt-2 text-gray-600">
-                You have joined the debate. The video room will appear here once
-                the host starts the debate.
-              </p>
+              <MetricCard
+                icon={<Clock className="h-3.5 w-3.5" />}
+                label="Timer"
+                value={debate?.status === "live" ? formatTimer(remainingSeconds) : "00:00"}
+              />
+
+              <MetricCard
+                icon={<MessageSquare className="h-3.5 w-3.5" />}
+                label="Transcript"
+                value={`${(workspace?.transcriptSegments || []).length} segments`}
+              />
+
+              <MetricCard
+                icon={<Trophy className="h-3.5 w-3.5" />}
+                label="Rounds"
+                value={`${roundCount || 0} total`}
+              />
             </div>
-          ) : null}
+          </section>
 
-          {isMessageDebate ? (
-            <div className="space-y-5">
-              {shouldShowResultGraphic ? (
-                <MessageResultGraphic
-                  finalScore={debate?.finalScore}
+          {error ? <Notice type="error">{error}</Notice> : null}
+          {notice ? <Notice type="success">{notice}</Notice> : null}
+
+          {loading ? (
+            <div className="surface-card flex min-h-[360px] items-center justify-center rounded-2xl p-8 text-center">
+              <div>
+                <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
+                <p className="mt-4 text-sm font-medium text-muted-foreground">
+                  Loading workspace...
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {isWaitingForOpponent ? (
+                <div className="surface-card rounded-2xl p-8 text-center">
+                  <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
+
+                  <h2 className="mt-5 font-display text-3xl font-bold">
+                    Waiting for opponent
+                  </h2>
+
+                  <p className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-muted-foreground">
+                    Share the invite link and keep this page open. The debate
+                    will be ready once another user joins.
+                  </p>
+
+                  <div className="mt-5 text-sm font-medium text-muted-foreground">
+                    Participants joined: {participants.length}/2
+                  </div>
+                </div>
+              ) : null}
+
+              {debate?.status === "scheduled" && hasTwoParticipants ? (
+                <div className="surface-card rounded-2xl p-5 lg:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+                        Ready
+                      </div>
+
+                      <h2 className="mt-1 font-display text-2xl font-bold">
+                        Opponent joined
+                      </h2>
+
+                      <p className="mt-1 text-sm font-medium text-muted-foreground">
+                        Both participants are now in the debate. The host can
+                        start the session.
+                      </p>
+                    </div>
+
+                    {isOwner ? (
+                      <button
+                        disabled={busy || !canStartDebate}
+                        onClick={onStart}
+                        className="focus-ring inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-primary hover:shadow-[0_18px_40px_-12px_var(--primary)] disabled:opacity-50"
+                      >
+                        <Play className="h-4 w-4" />
+                        Start debate
+                      </button>
+                    ) : (
+                      <p className="text-sm font-medium text-muted-foreground">
+                        Waiting for the host to start.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {!isOwner && isVideoVoiceDebate && !liveRoomUrl ? (
+                <div className="surface-card rounded-2xl p-6 text-center">
+                  <Mic className="mx-auto h-8 w-8 text-primary" />
+
+                  <h2 className="mt-3 font-display text-2xl font-bold">
+                    Waiting for host
+                  </h2>
+
+                  <p className="mx-auto mt-2 max-w-xl text-sm font-medium text-muted-foreground">
+                    You have joined the debate. The video room will appear once
+                    the host starts the debate.
+                  </p>
+                </div>
+              ) : null}
+
+              {isMessageDebate ? (
+                <div className="space-y-3">
+                  {shouldShowResultGraphic ? (
+                    <MessageResultGraphic
+                      finalScore={debate?.finalScore}
+                      speakerAName={speakerAName}
+                      speakerBName={speakerBName}
+                    />
+                  ) : null}
+
+                  <MessageDebatePanel
+                    debate={debate}
+                    transcriptSegments={workspace?.transcriptSegments || []}
+                    speakerAName={speakerAName}
+                    speakerBName={speakerBName}
+                    timerText={formatTimer(remainingSeconds)}
+                    currentRoundLabel={currentRoundLabel}
+                    busy={busy}
+                    isParticipant={isParticipant}
+                    isOwner={isOwner}
+                    endingDebate={busy}
+                    onEndDebate={onEnd}
+                    onSendMessage={sendMessageDebateMessage}
+                  />
+                </div>
+              ) : null}
+
+              {isVideoVoiceDebate && liveRoomUrl ? (
+                <CustomDailyCall
+                  roomUrl={liveRoomUrl}
+                  token={liveToken}
+                  userName={user?.displayName || user?.email || "Debater"}
+                  debateTitle={debate?.title || "Untitled debate"}
+                  debateStatus={debate?.status}
+                  timerText={formatTimer(remainingSeconds)}
+                  currentRoundLabel={currentRoundLabel}
                   speakerAName={speakerAName}
                   speakerBName={speakerBName}
+                  showResultGraphic={shouldShowResultGraphic}
+                  finalScore={debate?.finalScore}
+                  isOwner={isOwner}
+                  endingDebate={busy}
+                  onEndDebate={onEnd}
+                  onTranscriptSegment={saveDailyTranscriptSegment}
                 />
               ) : null}
 
-              <MessageDebatePanel
-  debate={debate}
-  transcriptSegments={workspace?.transcriptSegments || []}
-  speakerAName={speakerAName}
-  speakerBName={speakerBName}
-  timerText={formatTimer(remainingSeconds)}
-  currentRoundLabel={currentRoundLabel}
-  busy={busy}
-  isParticipant={isParticipant}
-  isOwner={isOwner}
-  endingDebate={busy}
-  onEndDebate={onEnd}
-  onSendMessage={sendMessageDebateMessage}
-/>
-            </div>
-          ) : null}
+              {debate?.status === "ended" ? (
+                <div className="surface-card rounded-2xl p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="font-display text-2xl font-bold">
+                        Debate finished
+                      </h2>
 
-          {isVideoVoiceDebate && liveRoomUrl ? (
-            <CustomDailyCall
-  roomUrl={liveRoomUrl}
-  token={liveToken}
-  userName={user?.displayName || user?.email || "Debater"}
-  debateTitle={debate?.title || "Untitled debate"}
-  debateStatus={debate?.status}
-  timerText={formatTimer(remainingSeconds)}
-  currentRoundLabel={currentRoundLabel}
-  speakerAName={speakerAName}
-  speakerBName={speakerBName}
-  showResultGraphic={shouldShowResultGraphic}
-  finalScore={debate?.finalScore}
-  isOwner={isOwner}
-  endingDebate={busy}
-  onEndDebate={onEnd}
-  onTranscriptSegment={saveDailyTranscriptSegment}
-/>
-          ) : null}
-
-          {debate?.status === "ended" ? (
-            <div className="rounded-xl border p-5 space-y-3">
-              <h2 className="text-2xl font-semibold">Debate finished</h2>
-
-              {resultSummary ? (
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <h3 className="font-semibold">{resultSummary.title}</h3>
-                  <p className="mt-1 text-gray-700">{resultSummary.body}</p>
-                </div>
-              ) : (
-                <p className="text-gray-600">
-                  The debate has ended. The host should click Compute final score
-                  to generate the transcript-based result.
-                </p>
-              )}
-
-              <button
-                onClick={() => setShowTranscript((current) => !current)}
-                className="rounded border px-3 py-2"
-              >
-                {showTranscript ? "Hide transcript" : "Reveal transcript"}
-              </button>
-
-              {showTranscript ? (
-                <div className="mt-4 rounded-lg bg-gray-50 p-4">
-                  <h3 className="font-semibold">Debate transcript</h3>
-
-                  {(workspace?.transcriptSegments || []).length ? (
-                    <div className="mt-3 space-y-3">
-                      {(workspace?.transcriptSegments || []).map((segment) => {
-                        const name =
-                          segment.speakerUserId === "speakerA"
-                            ? speakerAName
-                            : segment.speakerUserId === "speakerB"
-                              ? speakerBName
-                              : "Unknown speaker";
-
-                        return (
-                          <div key={segment.id || `${segment.startMs}-${segment.text}`}>
-                            <div className="text-sm font-medium text-gray-800">
-                              {name}
-                            </div>
-
-                            <div className="text-sm text-gray-600">
-                              {segment.text}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      <p className="mt-1 text-sm font-medium text-muted-foreground">
+                        The transcript and result are available below.
+                      </p>
                     </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-gray-600">
-                      No transcript was captured for this debate. This usually
-                      means no messages were sent or Daily transcription did not
-                      start.
-                    </p>
-                  )}
+
+                    <button
+                      onClick={() => setShowTranscript((current) => !current)}
+                      className="focus-ring rounded-full bg-muted px-4 py-2 text-sm font-semibold text-foreground hover:bg-slate-200"
+                    >
+                      {showTranscript ? "Hide transcript" : "Reveal transcript"}
+                    </button>
+                  </div>
+
+                  {resultSummary ? (
+                    <div className="mt-4 rounded-xl border border-hairline bg-surface-2 p-4">
+                      <h3 className="text-sm font-semibold">
+                        {resultSummary.title}
+                      </h3>
+
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        {resultSummary.body}
+                      </p>
+                    </div>
+                  ) : isOwner ? (
+                    <div className="mt-4 rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4">
+                      <p className="text-sm font-medium text-muted-foreground">
+                        No final score was found. You can retry transcript-based
+                        scoring.
+                      </p>
+
+                      <button
+                        disabled={busy}
+                        onClick={onComputeFinal}
+                        className="focus-ring mt-3 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                      >
+                        Retry scoring
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {showTranscript ? (
+                    <div className="mt-4 rounded-xl bg-surface-2 p-4">
+                      <h3 className="text-sm font-semibold">Debate transcript</h3>
+
+                      {(workspace?.transcriptSegments || []).length ? (
+                        <div className="mt-3 space-y-3">
+                          {(workspace?.transcriptSegments || []).map((segment) => {
+                            const name =
+                              segment.speakerUserId === "speakerA"
+                                ? speakerAName
+                                : segment.speakerUserId === "speakerB"
+                                  ? speakerBName
+                                  : "Unknown speaker";
+
+                            return (
+                              <div
+                                key={segment.id || `${segment.startMs}-${segment.text}`}
+                                className="rounded-xl border border-hairline bg-surface p-3"
+                              >
+                                <div className="text-xs font-semibold text-foreground">
+                                  {name}
+                                </div>
+
+                                <div className="mt-1 text-sm leading-6 text-muted-foreground">
+                                  {segment.text}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          No transcript was captured for this debate.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
-            </div>
-          ) : null}
+            </>
+          )}
+        </main>
 
-          {scorecard ? (
-            <div className="rounded-xl border p-4">
-              <h2 className="text-xl font-medium mb-2">Scorecard</h2>
+        <aside className="surface-card flex min-h-0 flex-col overflow-hidden rounded-2xl p-4">
+          <div>
+            <h2 className="font-display text-xl font-bold tracking-tight">
+              Session
+            </h2>
 
-              <pre className="text-xs overflow-auto bg-gray-50 p-3 rounded">
-                {JSON.stringify(scorecard, null, 2)}
-              </pre>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
+              Debate details and participants.
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <ParticipantCard
+              label="Speaker A"
+              participant={speakerA}
+              fallbackName="Debater A"
+            />
+
+            <ParticipantCard
+              label="Speaker B"
+              participant={speakerB}
+              fallbackName="Debater B"
+            />
+
+            <div className="rounded-xl border border-hairline bg-surface-2 p-3">
+              <Label>Details</Label>
+
+              <div className="mt-3 space-y-2 text-sm font-medium text-muted-foreground">
+                <div className="flex justify-between gap-3">
+                  <span>Mode</span>
+                  <span className="text-foreground">{getModeLabel(debateMode)}</span>
+                </div>
+
+                <div className="flex justify-between gap-3">
+                  <span>Duration</span>
+                  <span className="text-foreground">{estimatedDurationLabel}</span>
+                </div>
+
+                <div className="flex justify-between gap-3">
+                  <span>Rounds</span>
+                  <span className="text-foreground">{roundCount || 0}</span>
+                </div>
+
+                <div className="flex justify-between gap-3">
+                  <span>Closed</span>
+                  <span className="text-foreground">{closedRoundCount}</span>
+                </div>
+
+                <div className="flex justify-between gap-3">
+                  <span>Live room</span>
+                  <span className="text-foreground">
+                    {hasLiveSession ? "Created" : "Not yet"}
+                  </span>
+                </div>
+              </div>
             </div>
-          ) : null}
-        </>
-      )}
+
+            <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3">
+              <Label>Debate ID</Label>
+              <div className="mt-2 break-all font-mono text-[11px] text-muted-foreground">
+                {debateId}
+              </div>
+            </div>
+          </div>
+
+          <button
+            disabled={busy}
+            onClick={copyInviteLink}
+            className="focus-ring mt-auto inline-flex items-center justify-center gap-2 rounded-xl bg-muted px-4 py-3 text-sm font-semibold text-foreground transition-all hover:bg-slate-200 disabled:opacity-50"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied ? "Copied" : "Copy invite"}
+          </button>
+        </aside>
+      </div>
     </div>
   );
 }
