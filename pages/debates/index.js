@@ -5,10 +5,10 @@ import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 
 const LENGTH_OPTIONS = [
-  { value: "short", label: "5", subLabel: "Minutes", archiveLabel: "Short" },
-  { value: "medium", label: "20", subLabel: "Minutes", archiveLabel: "Medium" },
-  { value: "long", label: "45", subLabel: "Minutes", archiveLabel: "Long" },
-  { value: "custom", label: "Custom", subLabel: "Time", archiveLabel: "Custom" },
+  { value: "short", minutes: 5, label: "5", subLabel: "MIN", archiveLabel: "Short" },
+  { value: "medium", minutes: 20, label: "20", subLabel: "MIN", archiveLabel: "Medium" },
+  { value: "long", minutes: 45, label: "45", subLabel: "MIN", archiveLabel: "Long" },
+  { value: "custom", minutes: null, label: "∞", subLabel: "CUSTOM", archiveLabel: "Custom" },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -28,7 +28,7 @@ async function getAuthHeaders() {
 
 function getDebateModeLabel(mode) {
   if (mode === "message") return "Text";
-  return "Video/Voice";
+  return "Voice";
 }
 
 function getLengthLabel(debate) {
@@ -61,54 +61,65 @@ function normaliseDurationMinutes(value) {
   return Math.max(1, Math.min(180, Math.floor(number)));
 }
 
+function StatusPill({ status }) {
+  const isLive = status === "live";
+  const isEnded = status === "ended";
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${
+        isLive
+          ? "bg-[#6847f5] text-white"
+          : isEnded
+            ? "bg-slate-100 text-slate-500"
+            : "bg-lime-200 text-lime-800"
+      }`}
+    >
+      {isLive ? "Live" : isEnded ? "Ended" : status || "Draft"}
+    </span>
+  );
+}
+
+function HistoryBadge({ children }) {
+  return (
+    <span className="rounded-full bg-[#eef0f7] px-3 py-1 text-xs font-semibold text-slate-600">
+      {children}
+    </span>
+  );
+}
+
 function DebateHistoryCard({ debate }) {
   return (
-    <div className="rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-5 shadow-[0_0_24px_rgba(14,165,233,0.14)]">
-      <div className="flex items-start justify-between gap-4">
+    <div className="rounded-3xl border border-[#e5dfd4] bg-[#f7f4ee] p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-2xl font-black">
+          <h3 className="truncate text-lg font-black text-slate-950">
             {debate.title || "Untitled debate"}
           </h3>
 
-          <div className="mt-3 space-y-1 text-base text-white/65">
-            <div>Format: {getDebateModeLabel(debate.debateMode)}</div>
-            <div>Length: {getLengthLabel(debate)}</div>
-            <div>Topic: {getDomainLabel(debate.domain)}</div>
-            <div>
-              Status:{" "}
-              <span
-                className={
-                  debate.status === "ended"
-                    ? "text-white/70"
-                    : debate.status === "live"
-                      ? "text-green-300"
-                      : "text-cyan-300"
-                }
-              >
-                {debate.status}
-              </span>
-            </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <HistoryBadge>{getDebateModeLabel(debate.debateMode)}</HistoryBadge>
+            <HistoryBadge>{getLengthLabel(debate)}</HistoryBadge>
+            <HistoryBadge>{getDomainLabel(debate.domain)}</HistoryBadge>
           </div>
         </div>
 
-        <div className="shrink-0 rounded-full bg-white/10 px-4 py-2 text-sm text-white/60">
-          {debate.debateMode === "message" ? "Text" : "Live"}
-        </div>
+        <StatusPill status={debate.status} />
       </div>
 
-      <div className="mt-5 flex gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <Link
-          className="rounded-lg border border-cyan-200/20 px-5 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+          className="rounded-2xl bg-[#eef2fb] px-4 py-3 text-center text-sm font-bold text-slate-800 transition hover:bg-[#e4e9f7]"
           href={`/debates/${debate.id}`}
         >
-          Replay
+          ▷ Replay
         </Link>
 
         <Link
-          className="rounded-lg border border-cyan-200/20 px-5 py-2 text-sm font-medium text-white/80 hover:bg-white/10"
+          className="rounded-2xl bg-[#ede6ff] px-4 py-3 text-center text-sm font-bold text-[#6847f5] transition hover:bg-[#e5dcff]"
           href={`/debates/${debate.id}`}
         >
-          View Analysis
+          ▥ Analysis
         </Link>
       </div>
     </div>
@@ -121,11 +132,12 @@ export default function DebatesIndexPage() {
   const [user, setUser] = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [items, setItems] = useState([]);
 
   const [title, setTitle] = useState("");
   const [debateMode, setDebateMode] = useState("video_voice");
-  const [format, setFormat] = useState("short");
+  const [format, setFormat] = useState("medium");
   const [customDurationMinutes, setCustomDurationMinutes] = useState(10);
   const [domain, setDomain] = useState("politics");
   const [rounds, setRounds] = useState(1);
@@ -141,6 +153,7 @@ export default function DebatesIndexPage() {
 
   const showRoundSubtopics = roundCount > 1;
   const visibleHistory = items.slice(0, DEFAULT_HISTORY_COUNT);
+  const liveCount = items.filter((item) => item.status === "live").length;
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
@@ -191,17 +204,22 @@ export default function DebatesIndexPage() {
     });
   }
 
+  function changeRounds(delta) {
+    setRounds((current) => normaliseRounds(Number(current || 1) + delta));
+  }
+
   async function onCreate(e) {
     e.preventDefault();
 
     try {
       setError("");
+      setNotice("");
       setCreating(true);
 
       const cleanTitle = title.trim();
 
       if (!cleanTitle) {
-        throw new Error("Title is required.");
+        throw new Error("Motion is required.");
       }
 
       if (format === "custom" && !durationMinutes) {
@@ -260,17 +278,17 @@ export default function DebatesIndexPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/5 p-8">
-          <h1 className="text-3xl font-black">Debates</h1>
+      <div className="min-h-screen bg-[#f6f3ec] px-6 py-10 text-slate-950">
+        <div className="mx-auto max-w-3xl rounded-[2rem] border border-[#e5dfd4] bg-white p-8 shadow-sm">
+          <h1 className="text-4xl font-black">Debates</h1>
 
-          <p className="mt-2 text-white/60">
+          <p className="mt-2 text-slate-500">
             Please sign in to create and manage debates.
           </p>
 
           <Link
             href="/login"
-            className="mt-6 inline-flex rounded-xl bg-cyan-500 px-5 py-3 font-medium text-slate-950"
+            className="mt-6 inline-flex rounded-2xl bg-[#6847f5] px-5 py-3 font-bold text-white"
           >
             Go to login
           </Link>
@@ -280,279 +298,325 @@ export default function DebatesIndexPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_left,_rgba(14,165,233,0.28),_transparent_32%),linear-gradient(135deg,#020617,#07111f_45%,#020617)] px-6 py-8 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-4xl font-black tracking-tight">Debate Hub</h1>
+    <div className="min-h-screen bg-[#f6f3ec] px-4 py-5 text-slate-950 md:px-6">
+      <div className="mx-auto grid max-w-[1480px] gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+        <main className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.10)] md:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.42em] text-[#6847f5]">
+                New Session
+              </div>
 
-        {error ? (
-          <div className="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
-            {error}
+              <h1 className="mt-2 text-5xl font-black tracking-[-0.06em] md:text-6xl">
+                The Arena
+              </h1>
+            </div>
+
+            <div className="rounded-full bg-lime-200 px-4 py-2 text-sm font-black text-lime-900">
+              <span className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-600" />
+              {liveCount} live now
+            </div>
           </div>
-        ) : null}
 
-        <div className="mt-7 grid gap-7 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.58fr)]">
-          <section>
-            <h2 className="text-2xl font-black">The Arena</h2>
+          {error ? (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {error}
+            </div>
+          ) : null}
 
-            <form
-              onSubmit={onCreate}
-              className="mt-4 rounded-2xl border border-cyan-200/20 bg-slate-950/55 p-6 shadow-[0_0_35px_rgba(14,165,233,0.12)] backdrop-blur"
-            >
-              <div className="flex gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-500/20 text-sm font-black text-cyan-200">
-                  1
+          {notice ? (
+            <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+              {notice}
+            </div>
+          ) : null}
+
+          <form onSubmit={onCreate} className="mt-8">
+            <label className="block">
+              <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                Motion
+              </div>
+
+              <input
+                className="w-full rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee] px-6 py-5 text-xl font-medium text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
+                placeholder="This house would..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
+            </label>
+
+            <div className="mt-8 grid gap-5 lg:grid-cols-2">
+              <div>
+                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                  Format
                 </div>
 
-                <div className="flex-1">
-                  <h3 className="text-2xl font-black">Craft the Motion</h3>
+                <div className="grid grid-cols-2 rounded-3xl bg-[#edf0f6] p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setDebateMode("video_voice")}
+                    className={`rounded-2xl px-5 py-3 text-base font-black transition ${
+                      debateMode === "video_voice"
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    🎙 Voice
+                  </button>
 
-                  <label className="mt-5 block">
-                    <div className="mb-2 text-sm font-semibold text-white/80">
-                      Title
+                  <button
+                    type="button"
+                    onClick={() => setDebateMode("message")}
+                    className={`rounded-2xl px-5 py-3 text-base font-black transition ${
+                      debateMode === "message"
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    T&nbsp; Text
+                  </button>
+                </div>
+              </div>
+
+              <label className="block">
+                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                  Topic
+                </div>
+
+                <select
+                  className="w-full rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee] px-5 py-4 text-base font-semibold text-slate-950 outline-none transition focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                >
+                  {DOMAIN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-10">
+              <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                Length
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                {LENGTH_OPTIONS.map((option) => {
+                  const selected = format === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setFormat(option.value)}
+                      className={`rounded-3xl border px-4 py-5 text-center transition ${
+                        selected
+                          ? "border-[#6847f5] bg-[#6847f5] text-white shadow-[0_18px_35px_rgba(104,71,245,0.28)]"
+                          : "border-[#ddd8cf] bg-[#f7f4ee] text-slate-950 hover:border-[#6847f5]/40"
+                      }`}
+                    >
+                      <div className="text-3xl font-black leading-none">
+                        {option.label}
+                      </div>
+
+                      <div
+                        className={`mt-2 text-xs font-black uppercase tracking-[0.25em] ${
+                          selected ? "text-white/75" : "text-slate-500"
+                        }`}
+                      >
+                        {option.subLabel}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {format === "custom" ? (
+                <div className="mt-4 rounded-3xl border border-dashed border-[#c8bdfd] bg-[#f5f1ff] p-4">
+                  <label className="block">
+                    <div className="mb-2 text-sm font-bold text-slate-700">
+                      Custom debate length in minutes
                     </div>
 
                     <input
-                      className="w-full rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-300"
-                      placeholder="Enter debate title..."
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      required
+                      className="w-40 rounded-2xl border border-[#ddd8cf] bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none focus:border-[#6847f5]"
+                      type="number"
+                      min={1}
+                      max={180}
+                      value={customDurationMinutes}
+                      onChange={(e) => setCustomDurationMinutes(e.target.value)}
                     />
                   </label>
                 </div>
-              </div>
+              ) : null}
+            </div>
 
-              <div className="mt-8 flex gap-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-cyan-100">
-                  2
+            <div className="mt-10 grid gap-5 lg:grid-cols-2">
+              <div>
+                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                  Rounds
                 </div>
 
-                <div className="flex-1">
-                  <h3 className="text-2xl font-black">Configure Rules</h3>
+                <div className="flex items-center overflow-hidden rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee]">
+                  <button
+                    type="button"
+                    onClick={() => changeRounds(-1)}
+                    className="w-20 px-5 py-4 text-2xl font-medium text-slate-500 hover:bg-white"
+                  >
+                    −
+                  </button>
 
-                  <div className="mt-6 grid gap-5">
-                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
-                      <div className="text-sm font-semibold text-white/80">
-                        Format
-                      </div>
+                  <input
+                    className="min-w-0 flex-1 bg-transparent py-4 text-center text-2xl font-black text-slate-950 outline-none"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={rounds}
+                    onChange={(e) => setRounds(e.target.value)}
+                  />
 
-                      <div className="flex w-fit rounded-full border border-white/10 bg-slate-900/80 p-1">
-                        <button
-                          type="button"
-                          onClick={() => setDebateMode("video_voice")}
-                          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-                            debateMode === "video_voice"
-                              ? "bg-white/15 text-white shadow"
-                              : "text-white/50 hover:text-white"
-                          }`}
-                        >
-                          Video/Voice
-                        </button>
+                  <button
+                    type="button"
+                    onClick={() => changeRounds(1)}
+                    className="w-20 px-5 py-4 text-2xl font-medium text-slate-500 hover:bg-white"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setDebateMode("message")}
-                          className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-                            debateMode === "message"
-                              ? "bg-white/15 text-white shadow"
-                              : "text-white/50 hover:text-white"
-                          }`}
-                        >
-                          Text
-                        </button>
-                      </div>
-                    </div>
+              <div>
+                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+                  Status
+                </div>
 
-                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
-                      <div className="text-sm font-semibold text-white/80">
-                        Length
-                      </div>
+                <div className="rounded-3xl border border-dashed border-[#c8bdfd] bg-[#f5f1ff] px-5 py-4 text-sm font-semibold text-slate-700">
+                  <span className="mr-3 inline-block h-2 w-2 rounded-full bg-[#6847f5]" />
+                  {showRoundSubtopics
+                    ? `${roundCount} rounds — add a subtopic for each round.`
+                    : "One-round — title is the topic."}
+                </div>
+              </div>
+            </div>
 
-                      <div className="grid gap-3 sm:grid-cols-4">
-                        {LENGTH_OPTIONS.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setFormat(option.value)}
-                            className={`rounded-xl border px-3 py-4 text-center transition ${
-                              format === option.value
-                                ? "border-cyan-300 bg-cyan-400/15 shadow-[0_0_25px_rgba(14,165,233,0.25)]"
-                                : "border-white/15 bg-slate-950/50 hover:border-white/30"
-                            }`}
-                          >
-                            <div
-                              className={
-                                option.value === "custom"
-                                  ? "text-base font-black leading-tight"
-                                  : "text-2xl font-black"
-                              }
-                            >
-                              {option.label}
-                            </div>
-                            <div className="text-sm text-white/65">
-                              {option.subLabel}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+            {showRoundSubtopics ? (
+              <div className="mt-8 rounded-[2rem] border border-[#ddd8cf] bg-[#f7f4ee] p-5">
+                <h2 className="text-xl font-black">Round Topics</h2>
 
-                    {format === "custom" ? (
-                      <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
-                        <div className="text-sm font-semibold text-white/80">
-                          Minutes
-                        </div>
+                <p className="mt-1 text-sm font-medium text-slate-500">
+                  Subtopics are required when the debate has more than one round.
+                </p>
 
-                        <input
-                          className="w-36 rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
-                          type="number"
-                          min={1}
-                          max={180}
-                          value={customDurationMinutes}
-                          onChange={(e) =>
-                            setCustomDurationMinutes(e.target.value)
-                          }
-                        />
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
-                      <div className="text-sm font-semibold text-white/80">
-                        Topic
-                      </div>
-
-                      <select
-                        className="w-full max-w-sm rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
-                        value={domain}
-                        onChange={(e) => setDomain(e.target.value)}
-                      >
-                        {DOMAIN_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-[110px_1fr] md:items-center">
-                      <div className="text-sm font-semibold text-white/80">
-                        Rounds
+                <div className="mt-5 space-y-4">
+                  {Array.from({ length: roundCount }, (_, index) => (
+                    <label key={index} className="block">
+                      <div className="mb-2 text-sm font-black text-slate-700">
+                        Round {index + 1}
                       </div>
 
                       <input
-                        className="w-28 rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-cyan-300"
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={rounds}
-                        onChange={(e) => setRounds(e.target.value)}
+                        className="w-full rounded-2xl border border-[#ddd8cf] bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
+                        placeholder={`Subtopic for round ${index + 1}`}
+                        value={roundSubtopics[index] || ""}
+                        onChange={(e) =>
+                          updateRoundSubtopic(index, e.target.value)
+                        }
+                        required
                       />
-                    </div>
-                  </div>
-
-                  {showRoundSubtopics ? (
-                    <div className="mt-8 border-t border-white/10 pt-7">
-                      <h3 className="text-2xl font-black">Round Settings</h3>
-
-                      <p className="mt-1 text-sm text-white/50">
-                        Because this debate has more than one round, every round
-                        needs a required subtopic.
-                      </p>
-
-                      <div className="mt-5 space-y-4">
-                        {Array.from({ length: roundCount }, (_, index) => (
-                          <label key={index} className="block">
-                            <div className="mb-2 text-sm font-semibold text-white/80">
-                              Round {index + 1}: Subtopic
-                            </div>
-
-                            <input
-                              className="w-full rounded-lg border border-white/15 bg-slate-950/80 px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-300"
-                              placeholder={`Enter subtopic for round ${index + 1}`}
-                              value={roundSubtopics[index] || ""}
-                              onChange={(e) =>
-                                updateRoundSubtopic(index, e.target.value)
-                              }
-                              required
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-7 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
-                      This is a one-round debate, so the debate title will be
-                      used as the topic.
-                    </div>
-                  )}
-
-                  <button
-                    disabled={creating}
-                    className="mt-7 rounded-xl bg-cyan-400 px-6 py-3 font-medium text-slate-950 shadow-[0_0_28px_rgba(14,165,233,0.35)] disabled:opacity-50"
-                    type="submit"
-                  >
-                    {creating ? "Creating..." : "Create debate"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </section>
-
-          <section>
-            <h2 className="text-2xl font-black">History</h2>
-
-            {loading ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
-                Loading debates...
-              </div>
-            ) : items.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-6 text-white/50">
-                No debates yet.
-              </div>
-            ) : (
-              <>
-                <div className="mt-4 space-y-5">
-                  {visibleHistory.map((debate) => (
-                    <DebateHistoryCard key={debate.id} debate={debate} />
+                    </label>
                   ))}
                 </div>
+              </div>
+            ) : null}
 
-                {items.length > DEFAULT_HISTORY_COUNT ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowHistoryModal(true)}
-                    className="mt-5 w-full rounded-xl border border-cyan-200/20 px-4 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
-                  >
-                    See more
-                  </button>
-                ) : null}
-              </>
-            )}
-          </section>
-        </div>
+            <div className="mt-16 flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => setNotice("Draft saving is not enabled yet.")}
+                className="text-sm font-semibold text-slate-500 hover:text-slate-950"
+              >
+                Save as draft
+              </button>
+
+              <button
+                disabled={creating}
+                className="rounded-full bg-slate-950 px-8 py-4 text-base font-black text-white shadow-[0_18px_35px_rgba(15,23,42,0.18)] transition hover:bg-[#6847f5] disabled:opacity-50"
+                type="submit"
+              >
+                {creating ? "Creating..." : "Create debate"} →
+              </button>
+            </div>
+          </form>
+        </main>
+
+        <aside className="rounded-[2rem] bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.10)]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-black tracking-[-0.03em]">History</h2>
+
+            {items.length > DEFAULT_HISTORY_COUNT ? (
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(true)}
+                className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 hover:text-[#6847f5]"
+              >
+                All
+              </button>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <div className="mt-5 rounded-3xl bg-[#f7f4ee] p-5 text-sm font-semibold text-slate-500">
+              Loading debates...
+            </div>
+          ) : items.length === 0 ? (
+            <div className="mt-5 rounded-3xl bg-[#f7f4ee] p-5 text-sm font-semibold text-slate-500">
+              No debates yet.
+            </div>
+          ) : (
+            <>
+              <div className="mt-5 space-y-4">
+                {visibleHistory.map((debate) => (
+                  <DebateHistoryCard key={debate.id} debate={debate} />
+                ))}
+              </div>
+
+              {items.length > DEFAULT_HISTORY_COUNT ? (
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(true)}
+                  className="mt-5 w-full rounded-2xl bg-[#ede6ff] px-4 py-3 text-sm font-black text-[#6847f5] transition hover:bg-[#e5dcff]"
+                >
+                  See more
+                </button>
+              ) : null}
+            </>
+          )}
+        </aside>
       </div>
 
       {showHistoryModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
-          <div className="w-full max-w-3xl rounded-2xl border border-cyan-200/20 bg-slate-950 text-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-3xl rounded-[2rem] bg-white text-slate-950 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-6">
               <div>
-                <h2 className="text-2xl font-black">Debate History</h2>
-                <p className="mt-1 text-sm text-white/50">
-                  All debates you have created or opened recently.
+                <h2 className="text-3xl font-black">Debate History</h2>
+                <p className="mt-1 text-sm font-medium text-slate-500">
+                  All debates created on this workspace.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(false)}
-                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10"
+                className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200"
               >
                 Close
               </button>
             </div>
 
-            <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto p-6">
               {items.map((debate) => (
                 <DebateHistoryCard key={debate.id} debate={debate} />
               ))}
