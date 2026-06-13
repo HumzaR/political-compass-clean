@@ -3,12 +3,46 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import {
+  BarChart3,
+  ChevronDown,
+  Mic,
+  Minus,
+  Play,
+  Plus,
+  Radio,
+  Type,
+} from "lucide-react";
 
 const LENGTH_OPTIONS = [
-  { value: "short", minutes: 5, label: "5", subLabel: "MIN", archiveLabel: "Short" },
-  { value: "medium", minutes: 20, label: "20", subLabel: "MIN", archiveLabel: "Medium" },
-  { value: "long", minutes: 45, label: "45", subLabel: "MIN", archiveLabel: "Long" },
-  { value: "custom", minutes: null, label: "∞", subLabel: "CUSTOM", archiveLabel: "Custom" },
+  {
+    value: "short",
+    minutes: 5,
+    label: "5",
+    subLabel: "min",
+    archiveLabel: "Short",
+  },
+  {
+    value: "medium",
+    minutes: 20,
+    label: "20",
+    subLabel: "min",
+    archiveLabel: "Medium",
+  },
+  {
+    value: "long",
+    minutes: 45,
+    label: "45",
+    subLabel: "min",
+    archiveLabel: "Long",
+  },
+  {
+    value: "custom",
+    minutes: null,
+    label: "∞",
+    subLabel: "custom",
+    archiveLabel: "Custom",
+  },
 ];
 
 const DOMAIN_OPTIONS = [
@@ -61,68 +95,128 @@ function normaliseDurationMinutes(value) {
   return Math.max(1, Math.min(180, Math.floor(number)));
 }
 
-function StatusPill({ status }) {
-  const isLive = status === "live";
-  const isEnded = status === "ended";
-
+function Label({ children }) {
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${
-        isLive
-          ? "bg-[#6847f5] text-white"
-          : isEnded
-            ? "bg-slate-100 text-slate-500"
-            : "bg-lime-200 text-lime-800"
-      }`}
-    >
-      {isLive ? "Live" : isEnded ? "Ended" : status || "Draft"}
+    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+      {children}
     </span>
   );
 }
 
-function HistoryBadge({ children }) {
+function Field({ label, children, className = "" }) {
   return (
-    <span className="rounded-full bg-[#eef0f7] px-3 py-1 text-xs font-semibold text-slate-600">
+    <div className={className}>
+      <Label>{label}</Label>
+      <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}
+
+function SegmentButton({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "focus-ring inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+        active
+          ? "bg-surface text-foreground shadow-[0_2px_8px_-2px_rgba(15,23,42,0.18)]"
+          : "text-muted-foreground hover:text-foreground",
+      ].join(" ")}
+    >
       {children}
+    </button>
+  );
+}
+
+function LengthButton({ option, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "focus-ring flex flex-col items-center justify-center rounded-xl border px-2 py-2.5 transition-all",
+        selected
+          ? "border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_-10px_var(--primary)]"
+          : "border-hairline bg-surface-2 text-foreground hover:border-primary/40",
+      ].join(" ")}
+    >
+      <span className="font-display text-xl font-bold leading-none">
+        {option.label}
+      </span>
+
+      <span
+        className={[
+          "mt-1 text-[10px] uppercase tracking-[0.12em]",
+          selected ? "text-primary-foreground/80" : "text-muted-foreground",
+        ].join(" ")}
+      >
+        {option.subLabel}
+      </span>
+    </button>
+  );
+}
+
+function Tag({ children }) {
+  return (
+    <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function StatusChip({ status }) {
+  if (status === "live") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-primary-foreground">
+        <Radio className="h-2.5 w-2.5" />
+        Live
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+      {status === "ended" ? "Ended" : status || "Draft"}
     </span>
   );
 }
 
 function DebateHistoryCard({ debate }) {
   return (
-    <div className="rounded-3xl border border-[#e5dfd4] bg-[#f7f4ee] p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-black text-slate-950">
-            {debate.title || "Untitled debate"}
-          </h3>
+    <article className="group rounded-xl border border-hairline bg-surface-2 p-3 transition-all hover:border-primary/40 hover:shadow-[0_8px_24px_-12px_var(--primary)]">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-display text-sm font-bold leading-tight">
+          {debate.title || "Untitled debate"}
+        </h3>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <HistoryBadge>{getDebateModeLabel(debate.debateMode)}</HistoryBadge>
-            <HistoryBadge>{getLengthLabel(debate)}</HistoryBadge>
-            <HistoryBadge>{getDomainLabel(debate.domain)}</HistoryBadge>
-          </div>
-        </div>
-
-        <StatusPill status={debate.status} />
+        <StatusChip status={debate.status} />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-2 flex flex-wrap gap-1">
+        <Tag>{getDebateModeLabel(debate.debateMode)}</Tag>
+        <Tag>{getLengthLabel(debate)}</Tag>
+        <Tag>{getDomainLabel(debate.domain)}</Tag>
+      </div>
+
+      <div className="mt-2.5 flex gap-1.5">
         <Link
-          className="rounded-2xl bg-[#eef2fb] px-4 py-3 text-center text-sm font-bold text-slate-800 transition hover:bg-[#e4e9f7]"
+          className="focus-ring inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-muted px-2 py-1.5 text-[11px] font-semibold text-foreground hover:bg-foreground hover:text-background"
           href={`/debates/${debate.id}`}
         >
-          ▷ Replay
+          <Play className="h-3 w-3" />
+          Replay
         </Link>
 
         <Link
-          className="rounded-2xl bg-[#ede6ff] px-4 py-3 text-center text-sm font-bold text-[#6847f5] transition hover:bg-[#e5dcff]"
+          className="focus-ring inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-primary/10 px-2 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
           href={`/debates/${debate.id}`}
         >
-          ▥ Analysis
+          <BarChart3 className="h-3 w-3" />
+          Analysis
         </Link>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -137,7 +231,7 @@ export default function DebatesIndexPage() {
 
   const [title, setTitle] = useState("");
   const [debateMode, setDebateMode] = useState("video_voice");
-  const [format, setFormat] = useState("medium");
+  const [format, setFormat] = useState("short");
   const [customDurationMinutes, setCustomDurationMinutes] = useState(10);
   const [domain, setDomain] = useState("politics");
   const [rounds, setRounds] = useState(1);
@@ -278,17 +372,19 @@ export default function DebatesIndexPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#f6f3ec] px-6 py-10 text-slate-950">
-        <div className="mx-auto max-w-3xl rounded-[2rem] border border-[#e5dfd4] bg-white p-8 shadow-sm">
-          <h1 className="text-4xl font-black">Debates</h1>
+      <div className="min-h-screen p-3 lg:p-4">
+        <div className="surface-card mx-auto max-w-3xl rounded-2xl p-5 lg:p-7">
+          <h1 className="font-display text-4xl font-bold leading-[1] tracking-tight">
+            Debates
+          </h1>
 
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 text-sm text-muted-foreground">
             Please sign in to create and manage debates.
           </p>
 
           <Link
             href="/login"
-            className="mt-6 inline-flex rounded-2xl bg-[#6847f5] px-5 py-3 font-bold text-white"
+            className="focus-ring mt-5 inline-flex rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"
           >
             Go to login
           </Link>
@@ -298,178 +394,136 @@ export default function DebatesIndexPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f3ec] px-4 py-5 text-slate-950 md:px-6">
-      <div className="mx-auto grid max-w-[1480px] gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
-        <main className="rounded-[2rem] bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.10)] md:p-8">
-          <div className="flex items-start justify-between gap-4">
+    <div className="min-h-screen w-full p-3 lg:p-4">
+      <div className="grid min-h-[calc(100vh-2rem)] w-full grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-4">
+        <main className="surface-card flex min-h-0 flex-col overflow-hidden rounded-2xl p-5 lg:p-7">
+          <header className="mb-5 flex items-end justify-between gap-4">
             <div>
-              <div className="text-xs font-black uppercase tracking-[0.42em] text-[#6847f5]">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
                 New Session
               </div>
 
-              <h1 className="mt-2 text-5xl font-black tracking-[-0.06em] md:text-6xl">
+              <h1 className="mt-1 font-display text-4xl font-bold leading-[1] tracking-tight lg:text-5xl">
                 The Arena
               </h1>
             </div>
 
-            <div className="rounded-full bg-lime-200 px-4 py-2 text-sm font-black text-lime-900">
-              <span className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-600" />
+            <div className="hidden items-center gap-1.5 rounded-full bg-lime-200 px-3 py-1 text-[11px] font-semibold text-foreground md:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
               {liveCount} live now
             </div>
-          </div>
+          </header>
 
           {error ? (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
               {error}
             </div>
           ) : null}
 
           {notice ? (
-            <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
               {notice}
             </div>
           ) : null}
 
-          <form onSubmit={onCreate} className="mt-8">
-            <label className="block">
-              <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                Motion
-              </div>
+          <form onSubmit={onCreate} className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-5">
+              <Label>Motion</Label>
 
               <input
-                className="w-full rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee] px-6 py-5 text-xl font-medium text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
-                placeholder="This house would..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                placeholder="This house would…"
+                className="focus-ring mt-1.5 w-full rounded-xl border border-hairline bg-surface-2 px-4 py-3 font-display text-lg font-medium placeholder:font-normal placeholder:text-muted-foreground/50"
                 required
               />
-            </label>
+            </div>
 
-            <div className="mt-8 grid gap-5 lg:grid-cols-2">
-              <div>
-                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                  Format
-                </div>
-
-                <div className="grid grid-cols-2 rounded-3xl bg-[#edf0f6] p-1.5">
-                  <button
-                    type="button"
+            <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Format">
+                <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-muted p-1">
+                  <SegmentButton
+                    active={debateMode === "video_voice"}
                     onClick={() => setDebateMode("video_voice")}
-                    className={`rounded-2xl px-5 py-3 text-base font-black transition ${
-                      debateMode === "video_voice"
-                        ? "bg-white text-slate-950 shadow-sm"
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
                   >
-                    🎙 Voice
-                  </button>
+                    <Mic className="h-3.5 w-3.5" />
+                    Voice
+                  </SegmentButton>
 
-                  <button
-                    type="button"
+                  <SegmentButton
+                    active={debateMode === "message"}
                     onClick={() => setDebateMode("message")}
-                    className={`rounded-2xl px-5 py-3 text-base font-black transition ${
-                      debateMode === "message"
-                        ? "bg-white text-slate-950 shadow-sm"
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
                   >
-                    T&nbsp; Text
-                  </button>
+                    <Type className="h-3.5 w-3.5" />
+                    Text
+                  </SegmentButton>
                 </div>
-              </div>
+              </Field>
 
-              <label className="block">
-                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                  Topic
-                </div>
-
-                <select
-                  className="w-full rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee] px-5 py-4 text-base font-semibold text-slate-950 outline-none transition focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                >
-                  {DOMAIN_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="mt-10">
-              <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                Length
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-4">
-                {LENGTH_OPTIONS.map((option) => {
-                  const selected = format === option.value;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setFormat(option.value)}
-                      className={`rounded-3xl border px-4 py-5 text-center transition ${
-                        selected
-                          ? "border-[#6847f5] bg-[#6847f5] text-white shadow-[0_18px_35px_rgba(104,71,245,0.28)]"
-                          : "border-[#ddd8cf] bg-[#f7f4ee] text-slate-950 hover:border-[#6847f5]/40"
-                      }`}
-                    >
-                      <div className="text-3xl font-black leading-none">
+              <Field label="Topic">
+                <div className="relative">
+                  <select
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                    className="focus-ring w-full appearance-none rounded-xl border border-hairline bg-surface-2 px-4 py-2.5 pr-10 text-sm font-medium"
+                  >
+                    {DOMAIN_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
                         {option.label}
-                      </div>
+                      </option>
+                    ))}
+                  </select>
 
-                      <div
-                        className={`mt-2 text-xs font-black uppercase tracking-[0.25em] ${
-                          selected ? "text-white/75" : "text-slate-500"
-                        }`}
-                      >
-                        {option.subLabel}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+              </Field>
 
-              {format === "custom" ? (
-                <div className="mt-4 rounded-3xl border border-dashed border-[#c8bdfd] bg-[#f5f1ff] p-4">
-                  <label className="block">
-                    <div className="mb-2 text-sm font-bold text-slate-700">
-                      Custom debate length in minutes
-                    </div>
-
-                    <input
-                      className="w-40 rounded-2xl border border-[#ddd8cf] bg-white px-4 py-3 text-lg font-bold text-slate-950 outline-none focus:border-[#6847f5]"
-                      type="number"
-                      min={1}
-                      max={180}
-                      value={customDurationMinutes}
-                      onChange={(e) => setCustomDurationMinutes(e.target.value)}
+              <Field label="Length" className="sm:col-span-2">
+                <div className="grid grid-cols-4 gap-2">
+                  {LENGTH_OPTIONS.map((option) => (
+                    <LengthButton
+                      key={option.value}
+                      option={option}
+                      selected={format === option.value}
+                      onClick={() => setFormat(option.value)}
                     />
-                  </label>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-10 grid gap-5 lg:grid-cols-2">
-              <div>
-                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                  Rounds
+                  ))}
                 </div>
 
-                <div className="flex items-center overflow-hidden rounded-3xl border border-[#ddd8cf] bg-[#f7f4ee]">
+                {format === "custom" ? (
+                  <div className="mt-3 rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3">
+                    <label className="block">
+                      <div className="mb-1.5 text-xs font-semibold text-foreground">
+                        Custom length in minutes
+                      </div>
+
+                      <input
+                        className="focus-ring w-32 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-semibold"
+                        type="number"
+                        min={1}
+                        max={180}
+                        value={customDurationMinutes}
+                        onChange={(e) =>
+                          setCustomDurationMinutes(e.target.value)
+                        }
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </Field>
+
+              <Field label="Rounds">
+                <div className="flex items-center gap-2 rounded-xl border border-hairline bg-surface-2 p-1">
                   <button
                     type="button"
                     onClick={() => changeRounds(-1)}
-                    className="w-20 px-5 py-4 text-2xl font-medium text-slate-500 hover:bg-white"
+                    className="focus-ring grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
-                    −
+                    <Minus className="h-4 w-4" />
                   </button>
 
                   <input
-                    className="min-w-0 flex-1 bg-transparent py-4 text-center text-2xl font-black text-slate-950 outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-center font-display text-xl font-bold outline-none"
                     type="number"
                     min={1}
                     max={20}
@@ -480,86 +534,92 @@ export default function DebatesIndexPage() {
                   <button
                     type="button"
                     onClick={() => changeRounds(1)}
-                    className="w-20 px-5 py-4 text-2xl font-medium text-slate-500 hover:bg-white"
+                    className="focus-ring grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
-                    +
+                    <Plus className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
+              </Field>
 
-              <div>
-                <div className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-slate-500">
-                  Status
+              <Field label="Status">
+                <div className="flex h-[46px] items-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 text-xs text-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  {roundCount === 1
+                    ? "One-round — title is the topic."
+                    : `${roundCount} rounds — add subtopics below.`}
                 </div>
+              </Field>
 
-                <div className="rounded-3xl border border-dashed border-[#c8bdfd] bg-[#f5f1ff] px-5 py-4 text-sm font-semibold text-slate-700">
-                  <span className="mr-3 inline-block h-2 w-2 rounded-full bg-[#6847f5]" />
-                  {showRoundSubtopics
-                    ? `${roundCount} rounds — add a subtopic for each round.`
-                    : "One-round — title is the topic."}
+              {showRoundSubtopics ? (
+                <div className="sm:col-span-2">
+                  <div className="rounded-xl border border-hairline bg-surface-2 p-4">
+                    <h2 className="font-display text-base font-bold">
+                      Round Topics
+                    </h2>
+
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">
+                      Subtopics are required when the debate has more than one
+                      round.
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {Array.from({ length: roundCount }, (_, index) => (
+                        <label key={index} className="block">
+                          <div className="mb-1.5 text-xs font-semibold text-foreground">
+                            Round {index + 1}
+                          </div>
+
+                          <input
+                            className="focus-ring w-full rounded-lg border border-hairline bg-surface px-3 py-2 text-sm"
+                            placeholder={`Subtopic ${index + 1}`}
+                            value={roundSubtopics[index] || ""}
+                            onChange={(e) =>
+                              updateRoundSubtopic(index, e.target.value)
+                            }
+                            required
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
 
-            {showRoundSubtopics ? (
-              <div className="mt-8 rounded-[2rem] border border-[#ddd8cf] bg-[#f7f4ee] p-5">
-                <h2 className="text-xl font-black">Round Topics</h2>
-
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Subtopics are required when the debate has more than one round.
-                </p>
-
-                <div className="mt-5 space-y-4">
-                  {Array.from({ length: roundCount }, (_, index) => (
-                    <label key={index} className="block">
-                      <div className="mb-2 text-sm font-black text-slate-700">
-                        Round {index + 1}
-                      </div>
-
-                      <input
-                        className="w-full rounded-2xl border border-[#ddd8cf] bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#6847f5] focus:ring-4 focus:ring-[#6847f5]/10"
-                        placeholder={`Subtopic for round ${index + 1}`}
-                        value={roundSubtopics[index] || ""}
-                        onChange={(e) =>
-                          updateRoundSubtopic(index, e.target.value)
-                        }
-                        required
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-16 flex items-center justify-between gap-4">
+            <div className="mt-5 flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setNotice("Draft saving is not enabled yet.")}
-                className="text-sm font-semibold text-slate-500 hover:text-slate-950"
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
               >
                 Save as draft
               </button>
 
               <button
                 disabled={creating}
-                className="rounded-full bg-slate-950 px-8 py-4 text-base font-black text-white shadow-[0_18px_35px_rgba(15,23,42,0.18)] transition hover:bg-[#6847f5] disabled:opacity-50"
+                className="focus-ring group inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-primary hover:shadow-[0_18px_40px_-12px_var(--primary)] disabled:opacity-50"
                 type="submit"
               >
-                {creating ? "Creating..." : "Create debate"} →
+                {creating ? "Creating..." : "Create debate"}
+                <span className="transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
               </button>
             </div>
           </form>
         </main>
 
-        <aside className="rounded-[2rem] bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.10)]">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-black tracking-[-0.03em]">History</h2>
+        <aside className="surface-card flex min-h-0 flex-col overflow-hidden rounded-2xl p-4">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="font-display text-xl font-bold tracking-tight">
+              History
+            </h2>
 
             {items.length > DEFAULT_HISTORY_COUNT ? (
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(true)}
-                className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 hover:text-[#6847f5]"
+                className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground hover:text-foreground"
               >
                 All
               </button>
@@ -567,16 +627,16 @@ export default function DebatesIndexPage() {
           </div>
 
           {loading ? (
-            <div className="mt-5 rounded-3xl bg-[#f7f4ee] p-5 text-sm font-semibold text-slate-500">
+            <div className="rounded-xl bg-surface-2 p-3 text-sm font-medium text-muted-foreground">
               Loading debates...
             </div>
           ) : items.length === 0 ? (
-            <div className="mt-5 rounded-3xl bg-[#f7f4ee] p-5 text-sm font-semibold text-slate-500">
+            <div className="rounded-xl bg-surface-2 p-3 text-sm font-medium text-muted-foreground">
               No debates yet.
             </div>
           ) : (
             <>
-              <div className="mt-5 space-y-4">
+              <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
                 {visibleHistory.map((debate) => (
                   <DebateHistoryCard key={debate.id} debate={debate} />
                 ))}
@@ -586,7 +646,7 @@ export default function DebatesIndexPage() {
                 <button
                   type="button"
                   onClick={() => setShowHistoryModal(true)}
-                  className="mt-5 w-full rounded-2xl bg-[#ede6ff] px-4 py-3 text-sm font-black text-[#6847f5] transition hover:bg-[#e5dcff]"
+                  className="focus-ring mt-3 rounded-xl bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
                 >
                   See more
                 </button>
@@ -598,11 +658,13 @@ export default function DebatesIndexPage() {
 
       {showHistoryModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-8 backdrop-blur-sm">
-          <div className="w-full max-w-3xl rounded-[2rem] bg-white text-slate-950 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 p-6">
+          <div className="surface-card w-full max-w-3xl rounded-2xl text-foreground">
+            <div className="flex items-center justify-between border-b border-hairline p-5">
               <div>
-                <h2 className="text-3xl font-black">Debate History</h2>
-                <p className="mt-1 text-sm font-medium text-slate-500">
+                <h2 className="font-display text-2xl font-bold">
+                  Debate History
+                </h2>
+                <p className="mt-1 text-sm font-medium text-muted-foreground">
                   All debates created on this workspace.
                 </p>
               </div>
@@ -610,13 +672,13 @@ export default function DebatesIndexPage() {
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(false)}
-                className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200"
+                className="focus-ring rounded-lg bg-muted px-4 py-2 text-sm font-semibold text-foreground hover:bg-slate-200"
               >
                 Close
               </button>
             </div>
 
-            <div className="max-h-[70vh] space-y-4 overflow-y-auto p-6">
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto p-5">
               {items.map((debate) => (
                 <DebateHistoryCard key={debate.id} debate={debate} />
               ))}
